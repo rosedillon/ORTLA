@@ -1,0 +1,47 @@
+# Config for: orta assign
+# Load every train in the timetable from the period matrices: each
+# train's load at every call, station totals and link flows, scored
+# against counts where an operator's are given.
+#
+# Run `timetable` and `loading` first (loading writes each operator's
+# period matrices).
+#
+# Copy this file into configs/ and fill in your own paths:
+#   orta assign configs/assign.yml
+output_path: "outputs/assign"
+timetable_calls_path: "outputs/timetable/timetable_calls.csv"
+reference_date: "2026-06-17"
+days:
+  - Wednesday
+
+# Each operator's trains load from its own matrices; `counts` (optional)
+# scores them. Keys are loading data readers.
+operators:
+  northern:
+    atoc_codes: [NT]
+    period_matrices_dir: "outputs/loading/northern_period_matrices"
+    counts: "/path/to/datasources/northern-loading-data"
+    counts_date_from: "2026-05-31"
+  tpe:
+    atoc_codes: [TP]
+    period_matrices_dir: "outputs/loading/tpe_period_matrices"
+# Every other operator's trains load from these; leave unset to skip them.
+other_period_matrices_dir: "outputs/loading/northern_period_matrices"
+
+stations:
+  path: "/path/to/datasources/stations.csv"
+table_1410: "/path/to/datasources/table-1410-passenger-entries-and-exits-and-interchanges-by-station.csv"
+
+# The adopted model: case 117's settings, held out by corridor at
+# rmse(log) 0.461 on nine operators' counts. Each is off by default, so
+# leave them out to run the plain model. "national" and "neural" name
+# fitted models that ship with ORTA. Build the matrices with the
+# adopted loading.yml settings too.
+direction_split_model: national
+slot_share_model: neural
+# Network Rail SRAM's hourly OD demand (output O03, from the Rail Data
+# Marketplace). The neural slot share was fitted with it on.
+slot_share_profile: "/path/to/datasources/sram/SRAM_Summer24_O03_ODHourlyRoutes.parquet"
+transfer_scale: 1.20
+transfer_scale_london: 2.30
+transfer_choice_theta: 0.2

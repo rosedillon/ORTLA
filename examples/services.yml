@@ -1,0 +1,22 @@
+# Config for: orta services
+# List the timetabled trains between station pairs, with each train's
+# departure, arrival and period.
+#
+# Run `timetable` first; this reads its calls table.
+#
+# Copy this file into configs/ and fill in your own paths:
+#   orta services configs/services.yml
+output_path: "outputs/services"
+timetable_calls_path: "outputs/timetable/timetable_calls.csv"
+
+# One pair...
+origin: LDS
+destination: MAN
+# ...or every pair among a list of stations (station_codes).
+
+# Optional: only trains leaving in this window (start included, end not).
+time_range:
+  - "07:00"
+  - "10:00"
+
+reference_weekday: 2  # Wednesday, as in examples/timetable.yml

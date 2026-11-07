@@ -1,0 +1,18 @@
+pandas==2.3.3
+numpy>=2.3.2
+PyYAML>=6.0
+caf.toolkit>=0.6
+pydantic>=2.0
+networkx>=3.0
+geopandas>=0.14
+shapely>=2.0
+pyproj>=3.6
+scipy>=1.11
+tqdm>=4.66
+openpyxl>=3.1
+# Interactive route maps (distance's map_output) through geopandas' explore().
+folium>=0.15
+matplotlib>=3.8
+mapclassify>=2.6
+# Reads the SRAM hourly profile when it is a parquet file.
+pyarrow>=15

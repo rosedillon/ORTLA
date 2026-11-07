@@ -1,0 +1,32 @@
+{
+  "coefficients": {
+    "_pooled": {
+      "intercept": 0.0,
+      "ln_footfall_ratio": 0.015224206215058907
+    },
+    "early": {
+      "intercept": 0.0,
+      "ln_footfall_ratio": -0.4150307539535302
+    },
+    "am_peak": {
+      "intercept": 0.0,
+      "ln_footfall_ratio": -0.3817092821507636
+    },
+    "interpeak": {
+      "intercept": 0.0,
+      "ln_footfall_ratio": -0.023728297041367613
+    },
+    "pm_peak": {
+      "intercept": 0.0,
+      "ln_footfall_ratio": 0.22244980844012963
+    },
+    "evening": {
+      "intercept": 0.0,
+      "ln_footfall_ratio": 0.3076136912331383
+    }
+  },
+  "n_cells": 490537,
+  "r_squared": 0.15142987171609412,
+  "source": "case 16 national base-year check, variant codes_transfers: 490537 counted segments of nine operators, May 2026 timetable, weekdays; slopes fitted on segment on-board loads (fix_split_choice.py --save-model)",
+  "station_function": null
+}

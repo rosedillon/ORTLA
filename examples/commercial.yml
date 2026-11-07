@@ -1,0 +1,41 @@
+# Config for: orta commercial
+# Operator financial viability of one (or more) proposed rail services: fare
+# revenue as income against capital and operating costs. Produces NPV, IRR,
+# payback period, discounted cashflow and a sensitivity/tornado table.
+#
+# This is the operator's commercial case. The TAG economic appraisal is
+# part of `scenario`. Here fare revenue counts as a direct benefit,
+# discounted at the operator's cost of capital, not the Green Book's
+# social discount rates.
+#
+# Copy this file into configs/ (which is gitignored) and edit before running:
+#   orta commercial configs/commercial.yml
+output_path: "outputs/commercial"
+
+# The service(s) to appraise. For a single proposed service, list just one.
+# Leave do_minimum_services empty to appraise it as a *new* service (all
+# demand, and so all revenue, is incremental).
+proposed_services:
+  - name: "New Skipton–Colne link"
+    annual_passengers: 500000
+    avg_fare: 6.50                     # £ per passenger
+
+# do_minimum_services: []              # empty = brand-new service
+
+# Appraisal timing
+appraisal_year: 2028        # scheme opening year
+appraisal_period: 30        # years appraised from opening
+construction_period: 3      # years of capex before opening
+
+# Costs (£ million)
+capital_cost: 50.0
+annual_operating_cost: 2.0
+
+# The operator's own hurdle rate / cost of capital, used to discount the
+# cashflow for NPV (default shown; not a Green Book social discount rate).
+discount_rate: 0.08
+
+# Everything below is optional; leaving it out means no real growth.
+# demand_growth_rate: 0.0
+# fare_growth_rate: 0.0
+# cost_inflation_rate: 0.0
