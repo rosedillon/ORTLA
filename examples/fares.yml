@@ -1,0 +1,39 @@
+# Config for: orta fares
+# Look up official RSP standard fares (Anytime/Off-Peak/Season/etc.) between
+# station pairs, from the National Rail Data Portal's Fares Feed.
+#
+# These are the feed's published fares, not date-varying Advance prices.
+# fares.py's module docstring says what the feed covers.
+#
+# Copy this file into configs/ (which is gitignored) and fill in your own
+# paths before running:
+#   orta fares configs/fares.yml
+output_path: "outputs/fares"
+
+# Either point this at an already-extracted feed directory (containing the
+# .FFL/.LOC/.TTY files) ...
+# raw_feed_path: "/path/to/extracted/fares-feed"
+#
+# ... or download a fresh copy from the National Rail Data Portal instead
+# (an account at https://opendata.nationalrail.co.uk). Credentials can be set
+# here with username/password fields, or via the NRDP_USERNAME/NRDP_PASSWORD
+# environment variables (recommended: this file may end up on screen in the
+# GUI's form/YAML editor, even though configs/ itself is gitignored).
+download: true
+# username: "you@example.com"
+# password: "..."
+
+# Reuse the cleaned fares_flow.csv/fares_locations.csv/fares_tickets.csv
+# already in output_path from a previous run, instead of re-downloading and
+# re-parsing the ~100Mb raw feed every time you change the station pair(s).
+# reuse_existing_clean: true
+
+origin: MAN
+destination: LIV
+
+# Or batch over every ordered pair among several stations instead of a single
+# origin/destination (set at most one of the two):
+# station_codes:
+#   - MAN
+#   - LIV
+#

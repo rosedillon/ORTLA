@@ -1,0 +1,93 @@
+# Config for: orta discover
+# Scan the network for station pairs with no or poor existing direct service
+# but high estimated latent demand, synthesise a plausible direct-service
+# candidate for the most promising ones, and appraise each through the same
+# optimiser Scenario Studio uses. It finds pairs worth a closer look
+# without anyone having to pick them first.
+#
+# Run `timetable` and `bplan` first; this reads their outputs, plus the same
+# demand/fares/appraisal data sources as `propose` and `commercial`.
+#
+# Copy this file into configs/ (which is gitignored) and fill in your own
+# data source paths before running:
+#   orta discover configs/discover.yml
+output_path: "outputs/discovery"
+
+# --- Stage 1: station universe + straight-line pre-filter --------------
+station_list: "/path/to/datasources/valid_stations.csv"
+min_distance_miles: 15.0
+max_distance_miles: 150.0
+# Per-origin cap on the straight-line pre-filter, so the candidate count
+# stays bounded (~n_stations * this) regardless of how dense a part of the
+# network is.
+max_candidates_per_origin: 40
+
+distance:
+  track_shapefile: "/path/to/datasources/NWR_TrackModel/NWR_TrackCentreLines.shp"
+  stations:
+    path: "/path/to/datasources/stations.csv"
+    crs: crsCode
+    lat: lat
+    lon: long
+  coordinate_systems:
+    input_crs: "EPSG:4326"
+    working_crs: "EPSG:27700"
+
+# --- Stage 2: existing-service filter, from a `timetable` run's --------
+# whole-network summary.
+timetable_output_path: "outputs/timetable"
+max_existing_daily_trains: 1.0
+
+# --- Stage 3: demand scoring (gravity/catchment model, reused from -----
+# `propose`).
+table_1410: "/path/to/datasources/table-1410-passenger-entries-and-exits-and-interchanges-by-station.csv"
+period_matrices_dir: "outputs/loading/tp_period_matrices"
+gravity_min_loading_observations: 30
+# How many corridors the observed-market rank keeps.
+demand_ranked_shortlist_size: 50
+
+route_type:
+  bands:
+    commute: 30
+    regional: 100
+  fallback: long_distance
+
+# --- Stage 4: running-time feasibility, on the physical BPLAN network ---
+timetable_calls_path: "outputs/timetable/timetable_calls.csv"
+bplan_output_path: "outputs/bplan"
+# How many pairs that pass the running-time check get a candidate and a
+# full Scenario Studio sweep. This is most of a run's time.
+promote_to_sweep_n: 20
+
+# Candidate synthesis defaults.
+default_traction_code: "150"
+default_days_of_week:
+  - Monday
+  - Tuesday
+  - Wednesday
+  - Thursday
+  - Friday
+anchor_departure_time: "08:00"
+running_time_margin_minutes: 5.0
+search_window:
+  earliest_shift_minutes: -30.0
+  latest_shift_minutes: 30.0
+  step_minutes: 5.0
+  min_dwell_minutes: 1.0
+  max_dwell_minutes: 15.0
+
+# --- Stage 5: full sweep (reuses Scenario Studio's optimiser unchanged) --
+tag_databook_path: "/path/to/datasources/TAG-data-book.xlsm"
+frequency_options:
+  - 1
+  - 2
+
+# Left at 0.0, the resulting ranking is a demand-driven relative signal for
+# which pairs are worth investigating, not an appraisal. Real costs go
+# into a `scenario` run once a candidate is picked.
+default_capital_cost_m: 0.0
+default_annual_operating_cost_m: 0.0
+
+# Optional: a `fares` command output directory, used to price predicted
+# demand for the full-sweep appraisal. Leave unset to skip revenue pricing.
+# fares_dir: "outputs/fares"

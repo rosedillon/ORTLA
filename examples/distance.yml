@@ -1,0 +1,30 @@
+# Config for: orta distance
+# Calculate the track distance along a sequence of stations.
+#
+# Copy this file into configs/ (which is gitignored) and fill in your own
+# data source paths before running:
+#   orta distance configs/distance.yml
+output_path: "outputs/distance"
+
+station_codes:
+  - MAN
+  - LDS
+units: miles
+# Optional: write an interactive HTML map of the route.
+map_output: "outputs/distance/route.html"
+
+calculator:
+  track_shapefile: "/path/to/datasources/NWR_TrackModel/NWR_TrackCentreLines.shp"
+  stations:
+    path: "/path/to/datasources/stations.csv"
+    crs: crsCode
+    lat: lat
+    lon: long
+  coordinate_systems:
+    input_crs: "EPSG:4326"
+    working_crs: "EPSG:27700"
+  map:
+    route_colour: red
+    route_weight: 4
+    station_colour: blue
+    station_marker_type: marker

@@ -1,0 +1,215 @@
+[build-system]
+requires = ["setuptools>=64.0.0", "versioningit"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "orta"
+dynamic = ["version", "dependencies", "optional-dependencies"]
+description = "ORTA (Open Rail Train-level Assignment): open rail demand modelling for Great Britain."
+readme = "README.md"
+license = { "file" = "LICENSE" }
+requires-python = ">=3.11"
+authors = [{ name = "Dillon Rose" }]
+classifiers = [
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
+
+[project.scripts]
+orta = "orta.__main__:main"
+
+[project.gui-scripts]
+orta-gui = "orta.gui:launch"
+
+[tool.setuptools.dynamic]
+dependencies = { "file" = "requirements.txt" }
+
+[tool.setuptools.dynamic.optional-dependencies]
+dev = { "file" = "requirements_dev.txt" }
+gui = { "file" = "requirements_gui.txt" }
+
+# Dynamic versioning for editable installs
+[tool.setuptools.cmdclass]
+build_py = "versioningit.cmdclass.build_py"
+sdist = "versioningit.cmdclass.sdist"
+
+# Packaging options
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"orta" = ["py.typed"]
+"orta.models" = ["*.json"]
+
+# Linters
+[tool.ruff]
+line-length = 99
+target-version = "py311"
+extend-exclude = ["conf.py", "_version.py", "._*"]
+
+[tool.ruff.lint]
+select = [
+    "A",    # flake8-builtins
+    "E",    # pycodestyle
+    "W",    # pycodestyle warnings
+    "F",    # Pyflakes
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "SIM",  # flake8-simplify
+    "I",    # isort
+    "LOG",  # flake8-logging
+    "G",    # flake8-logging-format
+    "N",    # pep8-naming
+    "D",    # pydocstyle
+    "DOC",  # pydoclint
+    "PL",   # pylint
+    "BLE",  # flake8-blind-except
+    "ERA",  # eradicate (commented out code)
+    "TD",   # flake8-todos
+    "RET",  # flake8-return
+    "PTH",  # flake8-use-pathlib
+    "ANN",  # flake8-annotations
+    "S",    # flake8-bandit (security issues)
+    "ICN",  # flake8-import-conventions
+    "ARG",  # flake8-unused-arguments
+    "PIE",  # flake8-pie
+    "FURB", # refurb
+    "RUF",  # Ruff-specific rules
+    "TRY",  # tryceratops checks
+    "C90",  # mccabe (complex code)
+    "PD",   # pandas-vet (pandas best practices)
+    "TC",   # flake8-type-checking
+    "T20",  # flake8-print (disallow print statements)
+    "PGH",  # pygrep-hooks (noqa and type disable comments)
+]
+ignore = [
+    # These clash with the ruff formatter
+    "W191", # tab-indentation
+    "E111", # indentation-with-invalid-multiple
+    "E114", # indentation-with-invalid-multiple-comment
+    "E117", # over-indented
+    "D206", # docstring-tab-indentation
+    "D300", # triple-single-quotes
+
+    "UP015",  # redundant-open-modes (pyupgrade)
+    "TRY003", # long messages in exceptions (tryceratops)
+    "SIM108", # one line if else (flake8-bandit)
+    "S311",   # random.random not allowed (flake8-bandit)
+    "DOC502", # docstring-extraneous-exception (sometimes necessary)
+    "ANN003", # type annotation for **kwargs
+]
+unfixable = [
+    "T20",  # print-statements (flake8-print)
+    "B905", # zip without strict, fix defaults to False
+]
+
+[tool.ruff.lint.extend-per-file-ignores]
+"__init__.py" = ["F401"] # allow unused imports
+"tests/*" = [
+    "S101",    # use of assert in tests
+    "DOC",     # docstring issues
+    "D1",      # a test's name says what it checks
+    "ANN",     # test functions need no annotations
+    "PLC0415", # some tests import inside the test on purpose
+    "S301",    # tests read pickles they wrote themselves
+    "S105",    # fake credentials
+    "ARG",     # fixtures and monkeypatched stand-ins take unused arguments
+    "TC003",   # pathlib is imported for tmp_path annotations
+    "D401",    # helper docstrings describe what they build
+    "PLR2004", # magic values in test assertions are fine
+]
+"scripts/*" = [
+    "T20",     # these are one-shot CLIs; their output is the deliverable
+    "D1",      # each script has a module docstring; helpers are short
+    "ANN",
+    "PLC0415",
+    "S301",    # the scripts read the package's own cache pickles
+]
+"examples/*" = [
+    "T20",  # allow print statements
+    "D205", # allow one-liner docstrings
+    "D400", # allow missing first line in docstrings
+]
+
+[tool.ruff.lint.pycodestyle]
+max-doc-length = 72
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+[tool.ruff.lint.pep8-naming]
+ignore-names = ["df", "fn", "ca", "tp", "x", "i"]
+
+[tool.ruff.lint.flake8-import-conventions.extend-aliases]
+"caf.toolkit" = "ctk"
+
+[tool.ruff.lint.pylint]
+max-args = 10
+max-statements = 100
+# Small whole numbers such as len(stops) < 2 read better as they are.
+allow-magic-value-types = ["int", "str", "bytes"]
+
+[tool.ruff.format]
+docstring-code-format = true
+# Docstring code keeps to the 72-character doc lines.
+docstring-code-line-length = 64
+
+# Only necessary until pylint is fully covered by ruff
+[tool.pylint.design]
+max-args = 10
+max-attributes = 15
+max-statements = 100
+
+[tool.pylint.messages_control]
+disable = [
+    "line-too-long",         # Handled by ruff
+    "too-many-lines",
+    "use-dict-literal",
+    "use-list-literal",
+    "wrong-import-position", # Compatibility with ruff
+    "wrong-import-order",    # Handled by ruff
+    "ungrouped-imports",     # Handled by ruff
+]
+
+[tool.pylint.basic]
+extension-pkg-allow-list = []
+
+[tool.pylint.main]
+ignore = ["__init__.py", "_version.py"]
+
+[tool.mypy]
+packages = ["orta"]
+namespace_packages = true
+ignore_missing_imports = true
+allow_redefinition = true
+
+# Tests
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests", "src"]
+addopts = """\
+    --cov=orta --cov-report=xml -n auto \
+    --doctest-modules --ignore=examples --ignore=cases --ignore=src/orta/gui --ignore=src/open_rail_model --ignore-glob=*/._* \
+    --junitxml=junit.xml -o junit_family=legacy\
+    """
+
+[tool.coverage.report]
+include_namespace_packages = true
+
+# Versioning
+[tool.versioningit.vcs]
+method = "git"
+match = ["v*"]
+default-tag = "0.0.1"
+
+[tool.versioningit.onbuild]
+source-file = "src/orta/_version.py"
+build-file = "orta/_version.py"
+
+[tool.versioningit.format]
+distance = "{base_version}+{distance}.{vcs}{rev}"
+dirty = "{base_version}+{distance}.{vcs}{rev}.dirty"
+distance-dirty = "{base_version}+{distance}.{vcs}{rev}.dirty"
