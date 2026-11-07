@@ -1,0 +1,59 @@
+# Config for: orta scenario
+# Scenario Studio: try each candidate service at many departure times and
+# frequencies, check each version against the timetable, and appraise
+# the ones that fit on DfT TAG values.
+#
+# Run `timetable`, `bplan` and `loading` first.
+#
+# Copy this file into configs/ and fill in your own paths:
+#   orta scenario configs/scenario.yml
+output_path: "outputs/scenario"
+timetable_calls_path: "outputs/timetable/timetable_calls.csv"
+bplan_output_path: "outputs/bplan"
+period_matrices_dir: "outputs/loading/northern_period_matrices"
+table_1410: "/path/to/datasources/table-1410-passenger-entries-and-exits-and-interchanges-by-station.csv"
+tag_databook_path: "/path/to/datasources/TAG-data-book.xlsm"
+fares_dir: "outputs/fares"
+
+# The adopted model: case 117's settings, held out by corridor at
+# rmse(log) 0.461 on nine operators' counts. Each is off by default, so
+# leave them out to run the plain model. "national" and "neural" name
+# fitted models that ship with ORTA.
+direction_split_model: national
+slot_share_model: neural
+# Network Rail SRAM's hourly OD demand (output O03, from the Rail Data
+# Marketplace). The neural slot share was fitted with it on.
+slot_share_profile: "/path/to/datasources/sram/SRAM_Summer24_O03_ODHourlyRoutes.parquet"
+transfer_scale: 1.20
+transfer_scale_london: 2.30
+transfer_choice_theta: 0.2
+
+distance:
+  track_shapefile: "/path/to/datasources/NWR_TrackModel/NWR_TrackCentreLines.shp"
+  stations:
+    path: "/path/to/datasources/stations.csv"
+
+assumptions:
+  appraisal_year: 2028
+  capital_cost_m: 5.0
+  operating_cost_per_train_km: 27.0
+  frequency_options:
+    - 1
+    - 2
+    - 4
+
+services:
+  - name: leeds_harrogate_fast
+    operator: NT
+    traction_code: "195"
+    days_of_week:
+      - Wednesday
+    # Try departures from 30 minutes earlier to an hour later.
+    search_window:
+      earliest_shift_minutes: -30
+      latest_shift_minutes: 60
+    stops:
+      - station: LDS
+        departure: "07:30"
+      - station: HGT
+        arrival: "08:05"

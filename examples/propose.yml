@@ -1,0 +1,106 @@
+# Config for: orta propose
+# Check candidate new/altered services for timetable feasibility: is each
+# leg's proposed running time physically achievable (BPLAN Geography), and
+# does the departure clash with an existing scheduled train on the same
+# segment (a stand-in for headway; see feasibility.py).
+#
+# Run `timetable` and `bplan` first; this reads their outputs.
+#
+# Copy this file into configs/ (which is gitignored) and fill in your own
+# data source paths before running:
+#   orta propose configs/propose.yml
+output_path: "outputs/propose"
+
+timetable_calls_path: "outputs/timetable/timetable_calls.csv"
+bplan_output_path: "outputs/bplan"
+
+# One operator's period matrices from the `loading` command (or a manually
+# blended equivalent). Demand prediction is skipped if this is unset.
+period_matrices_dir: "outputs/loading/tp_period_matrices"
+frequency_elasticity: 0.4
+
+# The adopted model: case 117's settings, held out by corridor at
+# rmse(log) 0.461 on nine operators' counts. Each is off by default, so
+# leave them out to run the plain model. "national" and "neural" name
+# fitted models that ship with ORTA.
+direction_split_model: national
+slot_share_model: neural
+# Network Rail SRAM's hourly OD demand (output O03, from the Rail Data
+# Marketplace). The neural slot share was fitted with it on.
+slot_share_profile: "/path/to/datasources/sram/SRAM_Summer24_O03_ODHourlyRoutes.parquet"
+transfer_scale: 1.20
+transfer_scale_london: 2.30
+transfer_choice_theta: 0.2
+
+# Gravity/catchment model for a leg with no/thin existing demand data (a new
+# or barely-served stop). Both must be set for it to run.
+table_1410: "/path/to/datasources/table-1410-passenger-entries-and-exits-and-interchanges-by-station.csv"
+gravity_min_loading_observations: 30
+distance:
+  track_shapefile: "/path/to/datasources/NWR_TrackModel/NWR_TrackCentreLines.shp"
+  stations:
+    path: "/path/to/datasources/stations.csv"
+    crs: crsCode
+    lat: lat
+    lon: long
+  coordinate_systems:
+    input_crs: "EPSG:4326"
+    working_crs: "EPSG:27700"
+
+# Fallback seats for a candidate that doesn't set its own `capacity`.
+default_capacity: 400
+
+# Optional: a `fares` command output directory (holding fares_flow.csv /
+# fares_locations.csv / fares_tickets.csv). When set, each demand leg is
+# priced at the median standard-class Advance fare for its O-D pair, giving a
+# predicted_annual_revenue_gbp column in propose_{name}_demand_by_leg.csv.
+# Leave unset to skip revenue estimation.
+# fares_dir: "outputs/fares"
+
+reference_weekday: 2  # Wednesday, as in examples/timetable.yml and examples/services.yml
+
+headway_safety_margin_minutes: 1.0
+min_headway_floor_minutes: 2.0
+
+# Optional: sanity-check each candidate leg against real-world historic
+# punctuality through the HSP API (the same NRDP account as `fares`).
+# Skipped if left unset.
+# historic_performance:
+#   from_date: "2025-01-01"
+#   to_date: "2025-01-31"
+#   window_minutes: 30
+#   tolerance_minutes: "5"
+#   poor_reliability_percent: 75
+#   min_sample_size: 5
+#   # username: "you@example.com"
+#   # password: "..."
+
+services:
+  # Deliberately broken candidate, to prove the checks catch real problems:
+  # 19 minutes KGX -> Leeds is far below the true minimum (~100 min+), and
+  # departing 1 minute after an existing 05:40 KGX-Leeds train is far tighter
+  # than any sane headway.
+  - name: kgx_lds_infeasible_test
+    operator: GR
+    traction_code: "800"
+    days_of_week:
+      - Wednesday
+    stops:
+      - station: KGX
+        departure: "05:41"
+      - station: LDS
+        arrival: "06:00"
+
+  # A plausible candidate on the same corridor: departs well clear of the
+  # existing 05:40 train and allows enough running time.
+  - name: kgx_lds_plausible_test
+    operator: GR
+    traction_code: "800"
+    capacity: 500
+    days_of_week:
+      - Wednesday
+    stops:
+      - station: KGX
+        departure: "05:15"
+      - station: LDS
+        arrival: "07:15"

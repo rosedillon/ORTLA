@@ -1,0 +1,41 @@
+# Config for: orta new-station
+# Forecast a new station's annual entries and exits with the Station
+# Demand Forecasting Tool's model (University of Southampton), refitted
+# to the footfall year. The forecast comes with 80% and 90% intervals.
+#
+# Run `timetable` first for each timetable named below.
+#
+# Copy this file into configs/ and fill in your own paths:
+#   orta new-station configs/new-station.yml
+output_path: "outputs/new-station"
+cache_dir: "outputs/new-station/cache"
+
+# Stations already in the forecast timetable, forecast as if new.
+stations:
+  - BPA
+
+# Stations that do not exist yet.
+proposed:
+  - code: XAA
+    latitude: 53.4
+    longitude: -2.9
+    trains_per_day: 64
+    car_spaces: 100
+    electric: true
+
+postcode_population: "/path/to/datasources/sdft-inputs/census2021_postcode_population.csv"
+codepoint_dir: "/path/to/datasources/sdft-inputs/codepoint_open/Data/CSV"
+workplace_population: "/path/to/datasources/sdft-inputs/census2021_wp001/WP001_oa.csv"
+output_area_centroids: "/path/to/datasources/sdft-inputs/oa2021_pwc_osgb.csv"
+station_covariates: "/path/to/datasources/station-covariates/station_covariates.csv"
+
+# The timetable of the footfall year the constant is fitted to, and the
+# timetable the new stations open into. Each date is a Wednesday.
+calibration_timetable: "outputs/timetable_2024/timetable_calls.csv"
+calibration_reference_date: "2024-09-18"
+forecast_timetable: "outputs/timetable/timetable_calls.csv"
+forecast_reference_date: "2026-06-17"
+
+calibration_footfall: "/path/to/datasources/table-1410/table_1410_2024_25.csv"
+previous_footfall: "/path/to/datasources/table-1410/table_1410_2023_24.csv"
+domain_footfall: "/path/to/datasources/table-1410/table_1410_2011_12.csv"

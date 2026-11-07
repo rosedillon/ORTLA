@@ -1,0 +1,88 @@
+# Config for: orta loading
+# Analyse operator loading data and derive temporal period matrices.
+#
+# Copy this file into configs/ (which is gitignored) and fill in your own
+# data source paths before running:
+#   orta loading configs/loading.yml
+output_path: "outputs/loading"
+
+# Bucket everything by clock hour (24 one-hour periods) instead of the named
+# periods in time_periods_cutoffs below. Overrides time_periods_cutoffs and the
+# analysis time order. Re-run to regenerate the period matrices by hour (then
+# set hourly: true in lookup.yml too so the lookup reads them in hour order).
+# hourly: true
+
+table_1410: "/path/to/datasources/table-1410-passenger-entries-and-exits-and-interchanges-by-station.csv"
+station_list: "/path/to/datasources/stations.csv"
+source_odm: "/path/to/datasources/ODM_for_RDM_2024-25.csv"
+
+# The adopted model's matrices: station totals corrected for size (case
+# 29) and each pair's day spread over periods towards Network Rail
+# SRAM's hourly profile (case 37). Leave both out for the plain ODM.
+station_size_exponent: -0.097
+od_profile_path: "/path/to/datasources/sram/SRAM_Summer24_O03_ODHourlyRoutes.parquet"
+
+# Operator key -> loading data (keys: northern, tpe, awc, emr, gwr, gtr, swr, xc,
+# southeastern, greater_anglia). Each is filtered to services touching a valid
+# station before analysis. The Northern path is a folder of period CSVs.
+loading_paths:
+  northern: "/path/to/datasources/northern-loading-data"
+  awc: "/path/to/datasources/awc-loading-data.csv"
+  emr: "/path/to/datasources/emr-loading-data.csv"
+  tpe: "/path/to/datasources/tpe-loading-data.csv"
+
+# Stations counted as airport stations (origin or destination).
+airport_stations:
+  - MIA  # Manchester Airport
+  - LGW  # London Gatwick Airport
+  - LTN  # Luton Airport Parkway
+  - BHI  # Birmingham International Airport
+  - PRA  # Prestwick International Airport
+
+# Ordered period name -> start time. Departures before the first cutoff
+# are labelled "early".
+time_periods_cutoffs:
+  am_peak: "7:00"
+  interpeak: "9:30"
+  pm_peak: "16:00"
+  evening: "19:00"
+
+# Distance bands (miles) used to classify journey type. Anything above the
+# last band takes the fallback label.
+route_type:
+  bands:
+    commute: 30
+    regional: 100
+  fallback: long_distance
+
+# Demand quantity and journey-type column used when building factors.
+demand_column: "Mean Passengers On"
+journey_type_column: route_type_pax_off
+
+analysis:
+  day_order:
+    - Monday
+    - Tuesday
+    - Wednesday
+    - Thursday
+    - Friday
+    - Saturday
+    - Sunday
+  time_order:
+    - early
+    - am_peak
+    - interpeak
+    - pm_peak
+    - evening
+
+# Track distance calculator settings (used for routing and classification).
+distance:
+  track_shapefile: "/path/to/datasources/NWR_TrackModel/NWR_TrackCentreLines.shp"
+  stations:
+    path: "/path/to/datasources/stations.csv"
+    crs: crsCode
+    lat: lat
+    lon: long
+  coordinate_systems:
+    input_crs: "EPSG:4326"
+    working_crs: "EPSG:27700"

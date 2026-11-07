@@ -1,0 +1,57 @@
+# Config for: orta hindcast
+# Take a service that has already launched out of the timetable, predict
+# its loads as if it were new, and compare them with the counts.
+#
+# Run `timetable`, `bplan` and `loading` first.
+#
+# Copy this file into configs/ and fill in your own paths:
+#   orta hindcast configs/hindcast.yml
+case_name: northumberland_line
+output_path: "outputs/hindcast"
+reference_date: "2026-06-17"
+
+# Which schedules make up the launched service.
+strip:
+  atoc_code: NT
+  calls_at:
+    - SEJ
+    - NWH
+    - BEJ
+    - ASL
+  in_order: false
+
+# The counts to compare against.
+outturn:
+  operator: northern
+  path: "/path/to/datasources/northern-loading-data"
+  date_from: "2026-05-31"
+
+# A forecast footfall for each new station (from `new-station`), so the
+# hindcast never sees the station's own outturn.
+forecast_footfall_path: "outputs/new-station/new_station_forecasts.csv"
+forecast_footfall_weekday_share: 0.8
+
+traction_code: "158"
+default_capacity: 240
+timetable_calls_path: "outputs/timetable/timetable_calls.csv"
+bplan_output_path: "outputs/bplan"
+period_matrices_dir: "outputs/loading/northern_period_matrices"
+table_1410: "/path/to/datasources/table-1410-passenger-entries-and-exits-and-interchanges-by-station.csv"
+
+# The adopted model: case 117's settings, held out by corridor at
+# rmse(log) 0.461 on nine operators' counts. Each is off by default, so
+# leave them out to run the plain model. "national" and "neural" name
+# fitted models that ship with ORTA.
+direction_split_model: national
+slot_share_model: neural
+# Network Rail SRAM's hourly OD demand (output O03, from the Rail Data
+# Marketplace). The neural slot share was fitted with it on.
+slot_share_profile: "/path/to/datasources/sram/SRAM_Summer24_O03_ODHourlyRoutes.parquet"
+transfer_scale: 1.20
+transfer_scale_london: 2.30
+transfer_choice_theta: 0.2
+
+distance:
+  track_shapefile: "/path/to/datasources/NWR_TrackModel/NWR_TrackCentreLines.shp"
+  stations:
+    path: "/path/to/datasources/stations.csv"

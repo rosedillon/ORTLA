@@ -1,0 +1,69 @@
+"""SDFT port: schedule resolution, catchments and the trip end."""
+
+from __future__ import annotations
+
+import numpy as np
+import pandas as pd
+
+from orta import new_station as ns
+
+
+def _calls(rows):
+    cols = ["train_uid", "stp_indicator", "start_date", "end_date", "days_runs", "crs"]
+    return pd.DataFrame(rows, columns=cols)
+
+
+def test_overlay_replaces_permanent():
+    wednesday = pd.Timestamp("2026-06-17")
+    calls = _calls(
+        [
+            ("A1", "P", "2026-05-17", "2026-12-12", "1111100", "LDS"),
+            ("A1", "O", "2026-06-15", "2026-06-19", "1111100", "YRK"),
+            ("B2", "N", "2026-06-01", "2026-06-30", "0010000", "HGT"),
+            ("C3", "P", "2026-05-17", "2026-12-12", "1111100", "SHF"),
+            ("C3", "C", "2026-06-17", "2026-06-17", "0010000", "SHF"),
+        ]
+    )
+    running = ns.running_calls(calls, wednesday)
+    assert sorted(running["crs"]) == ["HGT", "YRK"]
+
+
+def test_catchment_keeps_everyone_within_750m():
+    stations = pd.DataFrame(
+        {
+            "e": [0.0, 400.0],
+            "n": [0.0, 0.0],
+            "freq": [50.0, 10.0],
+            **{k: [0.0, 0.0] for k in ("cat_f", "cctv", "car_spaces", "ticket_machine", "bus")},
+        },
+        index=["AAA", "BBB"],
+    )
+    people = pd.DataFrame({"e": [100.0, 300.0], "n": [0.0, 0.0], "pop": [60.0, 40.0]})
+    # With two stations the ten nearest pad with repeats, so give the
+    # tree enough points to look up.
+    padded = pd.concat(
+        [stations]
+        + [
+            stations.iloc[[0]].assign(e=1e7 + i).rename(index=lambda _, i=i: f"Z{i}")
+            for i in range(10)
+        ]
+    )
+    pop = ns.catchments(padded, people)
+    assert np.isclose(pop[["AAA", "BBB"]].sum(), 100.0, rtol=1e-6)
+    assert pop["AAA"] > pop["BBB"]
+
+
+def test_trip_end_by_hand():
+    row = pd.DataFrame(
+        {
+            "prw_pop": [9999.0],
+            "freq": [np.e**4],
+            "jobs": [0.0],
+            "car_spaces": [0.0],
+            "electric": [1.0],
+            "travelcard": [0.0],
+            "terminus": [0.0],
+        }
+    )
+    expected = 3.5 + 0.3663 * np.log(10000) + 1.1245 * 4 + 0.2366
+    assert np.isclose(ns.trip_end(row, 3.5).iloc[0], expected)
