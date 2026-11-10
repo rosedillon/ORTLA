@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from orta import new_station as ns
+from ortla import new_station as ns
 
 
 def _calls(rows):
@@ -67,3 +67,14 @@ def test_trip_end_by_hand():
     )
     expected = 3.5 + 0.3663 * np.log(10000) + 1.1245 * 4 + 0.2366
     assert np.isclose(ns.trip_end(row, 3.5).iloc[0], expected)
+
+
+def test_borrowing_leans_on_near_stations_and_never_on_itself():
+    cal = pd.DataFrame({"e": [0.0, 1000.0, 50_000.0], "n": 0.0}, index=["A", "B", "C"])
+    new = pd.DataFrame({"e": [0.0], "n": [0.0]}, index=["A"])
+    weights = ns.distance_weights(new, cal, 2.0)
+    assert weights[0, 0] == 0.0  # its own residual
+    assert weights[0, 2] < 1e-10  # 50 km away
+    lift = ns.borrow(weights, np.array([9.0, 1.0, 9.0]), 0.25)
+    w = np.exp(-0.5)
+    assert np.isclose(lift[0], w / (0.25 + w))

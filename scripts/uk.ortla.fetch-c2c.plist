@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Runs fetch_c2c.py every day at 09:30 (or on wake if the Mac was asleep). Install:
+     cp scripts/uk.ortla.fetch-c2c.plist ~/Library/LaunchAgents/
+     launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/uk.ortla.fetch-c2c.plist -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>uk.ortla.fetch-c2c</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Library/Frameworks/Python.framework/Versions/3.14/bin/python3</string>
+    <string>-I</string>
+    <string>/Volumes/ENGG341/code/open-rail-model/scripts/fetch_c2c.py</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>30</integer></dict>
+  <key>StandardOutPath</key><string>/Users/dillonrose/Library/Logs/ortla-fetch-c2c.log</string>
+  <key>StandardErrorPath</key><string>/Users/dillonrose/Library/Logs/ortla-fetch-c2c.log</string>
+</dict>
+</plist>

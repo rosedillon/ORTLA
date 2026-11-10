@@ -9,7 +9,7 @@ import pydantic
 import pytest
 import yaml
 
-from orta.config import COMMANDS
+from ortla.config import COMMANDS
 
 _EXAMPLES = sorted(
     p

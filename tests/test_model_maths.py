@@ -11,21 +11,21 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from orta import (
+from ortla import (
     demand,
     direction_split,
     gravity_model,
     loading_data,
     stations,
 )
-from orta.bplan_geography import BplanTimingGraph
-from orta.demand import (
+from ortla.bplan_geography import BplanTimingGraph
+from ortla.demand import (
     calibrated_leg,
     matrix_cell,
 )
-from orta.feasibility import _headway_rule
-from orta.od_matrix import rebalance_to_station_totals
-from orta.service_lookup import best_existing_minutes
+from ortla.feasibility import _headway_rule
+from ortla.od_matrix import rebalance_to_station_totals
+from ortla.service_lookup import best_existing_minutes
 
 
 def _calls(loads: list[float | None], stations: list[str], destination: str) -> pd.DataFrame:
@@ -634,8 +634,8 @@ def test_the_scan_ranks_corridors_on_their_observed_market() -> None:
     # Case 24: an unserved pair already has a market by other routes.
     # Each corridor once, ranked on it; a pair with no flow, or off the
     # matrices, is out.
-    from orta.config import RouteTypeConfig
-    from orta.discovery import _score_observed_market
+    from ortla.config import RouteTypeConfig
+    from ortla.discovery import _score_observed_market
 
     codes = ["AAA", "BBB", "CCC"]
     market = pd.DataFrame([[0, 10, 0], [10, 0, 300], [0, 300, 0]], index=codes, columns=codes)
@@ -652,7 +652,7 @@ def test_the_scan_ranks_corridors_on_their_observed_market() -> None:
     assert ranked[0].predicted_annual_trips == pytest.approx(600.0 * (np.exp(0.28) - 1))
     # A station's second code is the station: its trains count, it is
     # not a new pair.
-    from orta.discovery import _one_code_per_station
+    from ortla.discovery import _one_code_per_station
 
     one = {"XRO": "RET", "SPX": "STP"}
     kept, served = _one_code_per_station(
@@ -668,7 +668,7 @@ def test_a_frequency_option_is_priced_as_that_many_trains(
 ) -> None:
     # The sweep prices one train; f a day take `_frequency_scaling`'s
     # multiplier, and one a day is unchanged.
-    from orta.scenario import ScenarioAssumptions, _options_for_departure
+    from ortla.scenario import ScenarioAssumptions, _options_for_departure
 
     assumptions = ScenarioAssumptions(tag=None, frequency_options=[1, 4])
     row = pd.Series(
@@ -681,7 +681,7 @@ def test_a_frequency_option_is_priced_as_that_many_trains(
             "worst_gap_minutes": float("nan"),
         }
     )
-    monkeypatch.setattr("orta.scenario._quick_metrics", lambda _: (1.0, 0.0, 0.0, 0.0))
+    monkeypatch.setattr("ortla.scenario._quick_metrics", lambda _: (1.0, 0.0, 0.0, 0.0))
     options = _options_for_departure(
         row, assumptions, "x", 0.0, scaling={1: (1.0, 0.1), 4: (4.4, 1.2)}
     )
@@ -692,9 +692,9 @@ def test_a_frequency_option_is_priced_as_that_many_trains(
 def test_a_candidate_inserted_in_the_timetable_gives_its_own_legs() -> None:
     # Transfers route on the timetable after the change, so the
     # candidate's calls must read as one train of public legs.
-    from orta.config import CandidateService, ServiceStop
-    from orta.demand import candidate_calls
-    from orta.network_assignment import build_legs, day_calls
+    from ortla.config import CandidateService, ServiceStop
+    from ortla.demand import candidate_calls
+    from ortla.network_assignment import build_legs, day_calls
 
     candidate = CandidateService(
         name="c",
@@ -719,7 +719,7 @@ def test_a_candidate_inserted_in_the_timetable_gives_its_own_legs() -> None:
 
 
 def test_a_return_working_mirrors_the_outbound_times() -> None:
-    from orta.config import CandidateService, ServiceStop
+    from ortla.config import CandidateService, ServiceStop
 
     out = CandidateService(
         name="c",
@@ -745,7 +745,7 @@ def test_the_median_fare_resolves_clusters_and_drops_token_fares() -> None:
     # GTW is priced only through cluster Q001; the pool keeps adult
     # singles and halved returns, and drops the GBP 999 placeholder, the
     # 50p token, the child fare, first class and seasons.
-    from orta.fares import FaresTable, median_fare
+    from ortla.fares import FaresTable, median_fare
 
     rows = [  # ticket description, class, type, pence, non-retail
         ("ADVANCE", "2", "S", 3000, False),
@@ -917,8 +917,8 @@ def test_the_time_saving_is_each_legs_saving_on_todays_best_journey(
     # Today MDE->VIC is 40 min direct and MDE->BFR 85 with the change;
     # VIC->BFR is 25 direct. The candidate runs MDE 08:00, VIC 08:45,
     # BFR 09:00.
-    from orta import scenario
-    from orta.config import CandidateService, ServiceStop
+    from ortla import scenario
+    from ortla.config import CandidateService, ServiceStop
 
     monkeypatch.setattr(scenario, "day_services", lambda calls, *_: calls)
     candidate = CandidateService(
@@ -1300,8 +1300,8 @@ def test_calibrate_to_segments_recovers_planted_function_slopes():
 
 
 def test_forecast_footfall_fills_only_stations_missing_from_table_1410(tmp_path):
-    from orta.config import CandidateService, ServiceStop
-    from orta.hindcast import apply_forecast_footfall
+    from ortla.config import CandidateService, ServiceStop
+    from ortla.hindcast import apply_forecast_footfall
 
     pd.DataFrame(
         {"Three Letter Code\n(TLC)": ["OLD"], "Entries and exits - All tickets": ["12,000"]}
@@ -1522,8 +1522,8 @@ def test_split_counts_added_trains_both_ways_when_they_are_new() -> None:
 
 
 def test_the_round_trip_sums_both_directions_and_picks_the_best_bcr():
-    from orta.discovery import _round_trip
-    from orta.scenario import ScenarioOption, ScenarioResult
+    from ortla.discovery import _round_trip
+    from ortla.scenario import ScenarioOption, ScenarioResult
 
     def option(freq, time, pvb, pvc):
         return ScenarioOption(
@@ -1575,7 +1575,7 @@ def test_the_round_trip_sums_both_directions_and_picks_the_best_bcr():
 def test_a_long_one_change_journey_and_a_second_code_still_count_as_served():
     import pandas as pd
 
-    from orta.service_lookup import existing_journey
+    from ortla.service_lookup import existing_journey
 
     def train(uid, *calls):
         return [
@@ -1609,8 +1609,8 @@ def test_a_long_one_change_journey_and_a_second_code_still_count_as_served():
 
 
 def test_discovery_calls_at_the_busiest_stations_on_the_route(tmp_path):
-    from orta.config import DiscoveryConfig
-    from orta.discovery import DiscoveryCandidate, _route_calls, _synthesize_candidate
+    from ortla.config import DiscoveryConfig
+    from ortla.discovery import DiscoveryCandidate, _route_calls, _synthesize_candidate
 
     # A-X-Y-B, with a stop-to-stop timing on X-Y the route itself never
     # uses.
@@ -1668,7 +1668,7 @@ def test_discovery_calls_at_the_busiest_stations_on_the_route(tmp_path):
 
 
 def test_od_profile_moves_the_split_and_keeps_each_pair_day_total():
-    from orta import od_profile
+    from ortla import od_profile
 
     shares = od_profile.hour_shares({"am_peak": "7:00", "interpeak": "9:30"})
     assert shares.loc[9, "am_peak"] == shares.loc[9, "interpeak"] == 0.5

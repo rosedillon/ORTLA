@@ -8,14 +8,14 @@ import types
 import pandas as pd
 import pytest
 
-from orta import (
+from ortla import (
     demand,
     hindcast,
     period_matrices,
     track_distance,
 )
-from orta.config import ServiceStop
-from orta.service_lookup import _DayIndex, extract_od_services
+from ortla.config import ServiceStop
+from ortla.service_lookup import _DayIndex, extract_od_services
 
 CUTOFFS = {"am_peak": "7:00", "interpeak": "9:30", "pm_peak": "16:00", "evening": "19:00"}
 
@@ -242,7 +242,7 @@ def test_synthetic_split_conserves_the_pair_and_points_the_peak() -> None:
 
 def test_gtr_count_cache_ignores_the_tiploc_map(tmp_path, monkeypatch) -> None:
     """GTR's cache must serve both the loading and hindcast maps."""
-    from orta import loading_data
+    from ortla import loading_data
 
     calls = []
 

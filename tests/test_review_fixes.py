@@ -12,7 +12,7 @@ import zipfile
 import pandas as pd
 import pytest
 
-from orta import (
+from ortla import (
     appraisal,
     cif_archive,
     clock,
@@ -25,9 +25,9 @@ from orta import (
     timetable,
     wtt_workbook,
 )
-from orta.clock import interval_time_cutoffs
-from orta.config import CandidateService, ServiceStop
-from orta.service_lookup import crs_to_tiploc_map
+from ortla.clock import interval_time_cutoffs
+from ortla.config import CandidateService, ServiceStop
+from ortla.service_lookup import crs_to_tiploc_map
 
 CUTOFFS = {"am_peak": "7:00", "interpeak": "9:30", "pm_peak": "16:00", "evening": "19:00"}
 

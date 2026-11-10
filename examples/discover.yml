@@ -1,4 +1,4 @@
-# Config for: orta discover
+# Config for: ortla discover
 # Scan the network for station pairs with no or poor existing direct service
 # but high estimated latent demand, synthesise a plausible direct-service
 # candidate for the most promising ones, and appraise each through the same
@@ -10,7 +10,7 @@
 #
 # Copy this file into configs/ (which is gitignored) and fill in your own
 # data source paths before running:
-#   orta discover configs/discover.yml
+#   ortla discover configs/discover.yml
 output_path: "outputs/discovery"
 
 # --- Stage 1: station universe + straight-line pre-filter --------------

@@ -18,8 +18,10 @@ from __future__ import annotations
 
 import pathlib
 
-from orta import cif_archive
-from orta.timetable import load_tiploc_crs_map
+import pandas as pd
+
+from ortla import cif_archive
+from ortla.timetable import load_tiploc_crs_map
 
 # One test train, Kidsgrove to Longport: a real schedule from that
 # extract, with public times written onto its origin and terminus (the
@@ -156,3 +158,28 @@ def test_a_published_timetable_extract_reads_as_permanent(
     (schedule,) = cif_archive.iter_schedule_records(path)
 
     assert schedule["CIF_stp_indicator"] == "P"
+
+
+def test_joins_and_divides_are_written_with_their_dates(tmp_path):
+    from ortla import timetable
+
+    cif = tmp_path / "x.cif"
+    header = "HD" + " " * 78
+    divide = "AANC14853C148852605172612120000100VVSCNR     TP".ljust(80)
+    nextp = "AANC00202Y149382605172612060000001NPSKNGX     TO".ljust(80)
+    cif.write_text("\n".join([header, divide, nextp]) + "\n", encoding="latin-1")
+    path = timetable.write_associations(cif, {"CNR": "CNR"}, tmp_path)
+    rows = pd.read_csv(path, dtype=str)
+    assert rows.to_dict("records") == [
+        {
+            "main_uid": "C14853",
+            "portion_uid": "C14885",
+            "category": "VV",
+            "tiploc": "CNR",
+            "crs": "CNR",
+            "start_date": "2026-05-17",
+            "end_date": "2026-12-12",
+            "days": "0000100",
+            "CIF_stp_indicator": "P",
+        }
+    ]

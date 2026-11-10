@@ -1,11 +1,11 @@
-# Config for: orta services
+# Config for: ortla services
 # List the timetabled trains between station pairs, with each train's
 # departure, arrival and period.
 #
 # Run `timetable` first; this reads its calls table.
 #
 # Copy this file into configs/ and fill in your own paths:
-#   orta services configs/services.yml
+#   ortla services configs/services.yml
 output_path: "outputs/services"
 timetable_calls_path: "outputs/timetable/timetable_calls.csv"
 

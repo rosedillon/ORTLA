@@ -18,9 +18,9 @@ import numpy as np
 import pandas as pd
 import torch
 
-from orta.models import BUILTIN
-from orta.network_assignment import SlotShareModel
-from orta.slot_net import SlotShareNet
+from ortla.models import BUILTIN
+from ortla.network_assignment import SlotShareModel
+from ortla.slot_net import SlotShareNet
 
 
 def main(cases: pathlib.Path) -> None:

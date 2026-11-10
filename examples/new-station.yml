@@ -1,12 +1,14 @@
-# Config for: orta new-station
+# Config for: ortla new-station
 # Forecast a new station's annual entries and exits with the Station
 # Demand Forecasting Tool's model (University of Southampton), refitted
-# to the footfall year. The forecast comes with 80% and 90% intervals.
+# to the footfall year and adjusted by the residuals of established
+# stations nearby. The forecast comes with 80% and 90% intervals, and
+# SDFT's own forecast is reported beside it.
 #
 # Run `timetable` first for each timetable named below.
 #
 # Copy this file into configs/ and fill in your own paths:
-#   orta new-station configs/new-station.yml
+#   ortla new-station configs/new-station.yml
 output_path: "outputs/new-station"
 cache_dir: "outputs/new-station/cache"
 

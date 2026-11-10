@@ -1,9 +1,9 @@
-# Config for: orta lookup
+# Config for: ortla lookup
 # Look up expected trips for one station pair across the period matrices.
 #
 # Copy this file into configs/ (which is gitignored) and fill in your own
 # data source paths before running (run `loading` first):
-#   orta lookup configs/lookup.yml
+#   ortla lookup configs/lookup.yml
 output_path: "outputs/loading"
 
 # Set true if the period matrices were built with loading's hourly mode, so the

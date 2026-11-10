@@ -1,9 +1,9 @@
-# Config for: orta loading
+# Config for: ortla loading
 # Analyse operator loading data and derive temporal period matrices.
 #
 # Copy this file into configs/ (which is gitignored) and fill in your own
 # data source paths before running:
-#   orta loading configs/loading.yml
+#   ortla loading configs/loading.yml
 output_path: "outputs/loading"
 
 # Bucket everything by clock hour (24 one-hour periods) instead of the named

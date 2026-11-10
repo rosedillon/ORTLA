@@ -46,4 +46,4 @@ jobs:
       - name: Import
         run: |
           cd ..
-          python -c "import orta; orta.__version__;"
+          python -c "import ortla; ortla.__version__;"

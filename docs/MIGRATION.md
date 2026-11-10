@@ -28,7 +28,7 @@ they can be copied to Windows; folders written with the old names still read.
 ## The old name
 
 Until November 2026 the package was called `open-rail-model` and imported as
-`open_rail_model`. It is `orta` now, and the commands are `orta` and `orta-gui`. A
+`open_rail_model`. It is `ortla` now, and the commands are `ortla` and `ortla-gui`. A
 small alias package keeps `import open_rail_model...` working, so older scripts and
-pickles still load; it hands back the same modules as `orta`.
+pickles still load; it hands back the same modules as `ortla`.
 

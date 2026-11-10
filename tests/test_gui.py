@@ -15,16 +15,16 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication
 
-from orta.config import COMMANDS
-from orta.gui import charts
-from orta.gui.charts import maps, plotly_charts
-from orta.gui.constants import ThemeMode
-from orta.gui.docs import command_page
-from orta.gui.services.job_queue import JobQueue
-from orta.gui.services.pipeline import PipelineStage, apply_dependencies
-from orta.gui.views.analysis import AnalysisView
-from orta.gui.views.pipeline import _PRESETS, PipelineView
-from orta.gui.widgets.config_form import ConfigForm, field_comments
+from ortla.config import COMMANDS
+from ortla.gui import charts
+from ortla.gui.charts import maps, plotly_charts
+from ortla.gui.constants import ThemeMode
+from ortla.gui.docs import command_page
+from ortla.gui.services.job_queue import JobQueue
+from ortla.gui.services.pipeline import PipelineStage, apply_dependencies
+from ortla.gui.views.analysis import AnalysisView
+from ortla.gui.views.pipeline import _PRESETS, PipelineView
+from ortla.gui.widgets.config_form import ConfigForm, field_comments
 
 EXAMPLES = pathlib.Path(__file__).parents[1] / "examples"
 
@@ -37,7 +37,7 @@ def app(tmp_path, monkeypatch):
 
 
 def test_window_starts():
-    from orta.gui.app import RailModelApp
+    from ortla.gui.app import RailModelApp
 
     window = RailModelApp()
     assert window._stack.currentIndex() == 0
@@ -49,7 +49,7 @@ def test_every_command_has_a_form_and_a_page(command):
     model = COMMANDS[command][0]
     form = ConfigForm(model)
     assert form.get_data() == {} or set(form.get_data()) <= set(model.model_fields)
-    assert f"orta {command}" in command_page(command)
+    assert f"ortla {command}" in command_page(command)
 
 
 @pytest.mark.parametrize("path", sorted(EXAMPLES.glob("[!.]*.yml")), ids=lambda p: p.stem)
@@ -219,7 +219,7 @@ def test_new_station_map_needs_no_station_file(tmp_path):
 
 
 def test_chart_view_works_offline():
-    from orta.gui.widgets.chart_view import ChartView, _folder
+    from ortla.gui.widgets.chart_view import ChartView, _folder
 
     ChartView().set_figure(plotly_charts.go.Figure())
     assert (_folder() / "plotly.min.js").stat().st_size > 1_000_000

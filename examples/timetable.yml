@@ -1,9 +1,9 @@
-# Config for: orta timetable
+# Config for: ortla timetable
 # Clean a CIF timetable extract into per-call and route-frequency tables.
 #
 # Copy this file into configs/ (which is gitignored) and fill in your own
 # data source paths before running:
-#   orta timetable configs/timetable.yml
+#   ortla timetable configs/timetable.yml
 output_path: outputs/timetable
 cif_path: /path/to/datasources/timetable-data/CIF_ALL_FULL_DAILY_toc-full.json
 station_list: /path/to/datasources/valid_stations.csv

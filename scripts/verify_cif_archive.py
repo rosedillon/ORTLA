@@ -2,7 +2,7 @@
 
 Network Rail publishes one daily extract in both formats. Parsing both
 and comparing them record by record is the only way to establish that
-:mod:`orta.cif_archive` reads the archive extracts correctly,
+:mod:`ortla.cif_archive` reads the archive extracts correctly,
 since those are published in fixed width only and have no JSON
 counterpart.
 
@@ -25,7 +25,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "src"))
 
-from orta import cif_archive
+from ortla import cif_archive
 
 # The fields the model actually reads, from
 # ``timetable._service_summary`` and ``timetable._call_rows``. A

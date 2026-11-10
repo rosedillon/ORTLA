@@ -1,4 +1,4 @@
-# Config for: orta bplan
+# Config for: ortla bplan
 # Clean a Network Rail BPLAN Geography extract (LOC/NWK/TLK/TLD/PLT/REF
 # records, tab-delimited) and build the minimum-sectional-running-time graph.
 #
@@ -8,7 +8,7 @@
 #
 # Copy this file into configs/ (which is gitignored) and fill in your own
 # data source paths before running:
-#   orta bplan configs/bplan.yml
+#   ortla bplan configs/bplan.yml
 output_path: "outputs/bplan"
 
 geography_path: "/path/to/datasources/bplan-geography-extract.txt"
