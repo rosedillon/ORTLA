@@ -1,4 +1,4 @@
-"""Tests for the national train-level assignment (`orta assign`)."""
+"""Tests for the national train-level assignment (`ortla assign`)."""
 
 from __future__ import annotations
 
@@ -7,10 +7,10 @@ import pandas as pd
 import pytest
 from test_network_assignment import CUTOFFS, WEDNESDAY, _train
 
-from orta import assign
-from orta import network_assignment as na
-from orta.clock import WEEKDAYS_PER_YEAR
-from orta.config import AssignConfig
+from ortla import assign, loading_data
+from ortla import network_assignment as na
+from ortla.clock import WEEKDAYS_PER_YEAR
+from ortla.config import AssignConfig
 
 
 def _calls() -> pd.DataFrame:
@@ -129,6 +129,8 @@ def test_counts_match_by_uid_or_by_headcode_and_ends():
             "Destination CRS": "CCC",
             "Origin Departure Time": ["08:00", "08:00", "08:30:00"],
             "Departure from CRS": ["AAA", "AAA", "AAA"],
+            "Call Sequence": 1,
+            "RSP Period": ["1", "2", "1"],
             "Mean Load on Departure": [10.0, 20.0, 7.0],
             "Mean Passengers On": [10.0, 20.0, 7.0],
             "Mean Passengers Off": [0.0, 0.0, 0.0],
@@ -138,6 +140,28 @@ def test_counts_match_by_uid_or_by_headcode_and_ends():
     assert matched.loc["X1", "actual_load"] == pytest.approx(15.0)
     assert matched.loc["X1", "n_periods"] == 2
     assert matched.loc["X2", "actual_load"] == pytest.approx(7.0)
+
+
+def test_undated_feed_reads_each_file_as_a_period(tmp_path):
+    row = {
+        "Unique ID": "X1",
+        "Train ID (Headcode)": "1X01",
+        "Day of Count": "Wednesday",
+        "Origin of Service (CRS)": "AAA",
+        "Destination of Service (CRS)": "CCC",
+        "Timetabled Departure from Origin": "08:00",
+        "Station CRS": "AAA",
+        "Station Scheduled Arrival Time": "08:00",
+        "Number of Counts": "4",
+        "Standard Seated Capacity": "300",
+        "First Class Seated Capacity": "20",
+        "Total Load (Mean)": "50",
+    }
+    for name in ("a.csv", "b.csv"):
+        pd.DataFrame([row]).to_csv(tmp_path / name, index=False)
+    counts = loading_data.read_awc(tmp_path)
+    assert counts["RSP Period"].tolist() == ["1", "2"]
+    assert loading_data.read_awc(tmp_path / "b.csv")["RSP Period"].tolist() == ["1"]
 
 
 def test_score_reports_level_and_log_error():
@@ -193,7 +217,7 @@ def test_split_factors_conserve_a_pair_s_two_directions():
 
 def test_the_charts_draw_from_the_command_s_tables(world):
     pytest.importorskip("plotly")
-    from orta.gui import charts
+    from ortla.gui import charts
 
     _config(world, other_period_matrices_dir=world / "mx").run()
     out = world / "out"

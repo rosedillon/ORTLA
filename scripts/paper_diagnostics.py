@@ -26,10 +26,10 @@ import pathlib
 import numpy as np
 import pandas as pd
 
-from orta import loading_data
-from orta.clock import classify_times
-from orta.gravity_model import load_direct_frequency
-from orta.stations import load_table_1410
+from ortla import loading_data
+from ortla.clock import classify_times
+from ortla.gravity_model import load_direct_frequency
+from ortla.stations import load_table_1410
 
 DS = pathlib.Path(os.environ.get("ORM_DATA", "/Volumes/ENGG341/datasources"))
 # ORM_OUT and ORM_TIMETABLE point a regeneration at its own outputs

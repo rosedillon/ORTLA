@@ -1,4 +1,4 @@
-# Config for: orta scenario
+# Config for: ortla scenario
 # Scenario Studio: try each candidate service at many departure times and
 # frequencies, check each version against the timetable, and appraise
 # the ones that fit on DfT TAG values.
@@ -6,7 +6,7 @@
 # Run `timetable`, `bplan` and `loading` first.
 #
 # Copy this file into configs/ and fill in your own paths:
-#   orta scenario configs/scenario.yml
+#   ortla scenario configs/scenario.yml
 output_path: "outputs/scenario"
 timetable_calls_path: "outputs/timetable/timetable_calls.csv"
 bplan_output_path: "outputs/bplan"
@@ -18,13 +18,13 @@ fares_dir: "outputs/fares"
 # The adopted model: case 117's settings, held out by corridor at
 # rmse(log) 0.461 on nine operators' counts. Each is off by default, so
 # leave them out to run the plain model. "national" and "neural" name
-# fitted models that ship with ORTA.
+# fitted models that ship with ORTLA.
 direction_split_model: national
 slot_share_model: neural
 # Network Rail SRAM's hourly OD demand (output O03, from the Rail Data
 # Marketplace). The neural slot share was fitted with it on.
 slot_share_profile: "/path/to/datasources/sram/SRAM_Summer24_O03_ODHourlyRoutes.parquet"
-transfer_scale: 1.20
+transfer_scale: 1.0
 transfer_scale_london: 2.30
 transfer_choice_theta: 0.2
 

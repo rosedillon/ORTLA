@@ -14,7 +14,7 @@ behind it. Configs are in `configs/paper/`; outputs go to
 | Case 1 hindcasts | `hindcast` / `case1_*.yml` | `output_paper/case1_*` |
 | Methods diagnostics | `scripts/paper_diagnostics.py` | `output_paper/analysis` |
 
-Run any step with `PYTHONPATH=src python3 -m orta <command> <config>`.
+Run any step with `PYTHONPATH=src python3 -m ortla <command> <config>`.
 
 ## Data
 

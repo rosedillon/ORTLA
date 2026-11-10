@@ -1,9 +1,9 @@
 """The model's old name, kept so the research cases still import.
 
-The package is :mod:`orta` now. ``import open_rail_model.config`` hands
-back the very module ``orta.config``, so the case scripts, and pickles
+The package is :mod:`ortla` now. ``import open_rail_model.config`` hands
+back the very module ``ortla.config``, so the case scripts, and pickles
 written before the rename, work unchanged. New code should import
-:mod:`orta`.
+:mod:`ortla`.
 """
 
 import importlib
@@ -13,11 +13,11 @@ import importlib.util
 import sys
 import types
 
-import orta
+import ortla
 
 
 class _Alias(importlib.abc.MetaPathFinder, importlib.abc.Loader):
-    """Resolve ``open_rail_model.x`` to the existing ``orta.x``."""
+    """Resolve ``open_rail_model.x`` to the existing ``ortla.x``."""
 
     def find_spec(
         self, name: str, path: object = None, target: object = None
@@ -29,12 +29,12 @@ class _Alias(importlib.abc.MetaPathFinder, importlib.abc.Loader):
         return None
 
     def create_module(self, spec: importlib.machinery.ModuleSpec) -> types.ModuleType:
-        """Hand back the ``orta`` module itself."""
-        return importlib.import_module("orta" + spec.name.removeprefix(__name__))
+        """Hand back the ``ortla`` module itself."""
+        return importlib.import_module("ortla" + spec.name.removeprefix(__name__))
 
     def exec_module(self, module: types.ModuleType) -> None:
-        """Do nothing: the module has already run as ``orta``."""
+        """Do nothing: the module has already run as ``ortla``."""
 
 
 sys.meta_path.insert(0, _Alias())
-sys.modules[__name__] = orta
+sys.modules[__name__] = ortla

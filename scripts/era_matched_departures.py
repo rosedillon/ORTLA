@@ -32,8 +32,8 @@ import pandas as pd
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "src"))
 
-from orta import loading_data
-from orta.config import TimetableEra
+from ortla import loading_data
+from ortla.config import TimetableEra
 
 DATASOURCES = pathlib.Path("/Volumes/ENGG341/datasources")
 OUTPUT = DATASOURCES / "output_paper"

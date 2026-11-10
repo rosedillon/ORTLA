@@ -104,9 +104,9 @@ groups, and for some of them the `TiplocV1` reference record carries a null CRS:
  "crs_code":null,"description":null,"tps_description":"LONDON WATERLOO"}
 ```
 
-`load_tiploc_crs_map` ([timetable.py:130](src/orta/timetable.py#L130))
+`load_tiploc_crs_map` ([timetable.py:130](src/ortla/timetable.py#L130))
 maps these to `""`, and `read_public_calls`
-([timetable.py:349](src/orta/timetable.py#L349)) then drops every call
+([timetable.py:349](src/ortla/timetable.py#L349)) then drops every call
 at a location with no CRS. **192,589 public call rows** across 77 TIPLOCs were
 affected; 12 were real stations, and 10 stations lost *every* call row.
 
@@ -208,7 +208,7 @@ own. Covered by `tests/test_network_inputs.py`.
 ### 3.4 The pre-rank is mis-specified against the model it gates
 
 Stage 3a shortlists on a footfall proxy `F_o · F_d / d²`
-([discovery.py](src/orta/discovery.py), `_proxy_rank_demand`).
+([discovery.py](src/ortla/discovery.py), `_proxy_rank_demand`).
 The fitted model it gates has `ln_distance = -0.626`, not -2 — a distance
 exponent wrong by a factor of three, which systematically starves the shortlist
 of long-distance candidates. At the default `demand_proxy_shortlist_size: 500`,
@@ -495,8 +495,8 @@ From the repo root, after the `timetable` and `bplan` paper configs:
 
 ```sh
 PYTHONPATH=src python3 scripts/discovery_inputs.py
-PYTHONPATH=src python3 -m orta discover configs/paper/discovery_national.yml
-PYTHONPATH=src python3 -m orta scenario configs/paper/scenario_discovery_cases.yml
+PYTHONPATH=src python3 -m ortla discover configs/paper/discovery_national.yml
+PYTHONPATH=src python3 -m ortla scenario configs/paper/scenario_discovery_cases.yml
 ```
 
 §3.1 and §3.3 are now in the library — `crs_reference` on the `timetable` config

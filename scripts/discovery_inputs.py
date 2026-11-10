@@ -47,15 +47,15 @@ import numpy as np
 import pandas as pd
 from scipy.spatial import cKDTree
 
-from orta.config import TrackCalculatorConfig
-from orta.discovery import _pairs_within_distance_band
-from orta.stations import (
+from ortla.config import TrackCalculatorConfig
+from ortla.discovery import _pairs_within_distance_band
+from ortla.stations import (
     canonical_crs,
     read_station_list,
     resolve_aliases,
     resolve_recodes,
 )
-from orta.track_distance import TrackDistanceCalculator
+from ortla.track_distance import TrackDistanceCalculator
 
 if TYPE_CHECKING:
     from collections.abc import Callable

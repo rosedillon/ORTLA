@@ -2,7 +2,7 @@
 
 **Status:** implemented, off by default. Set `direction_split_model` on a
 `propose` or `hindcast` config to switch it on.
-**Code:** [`src/orta/direction_split.py`](src/orta/direction_split.py),
+**Code:** [`src/ortla/direction_split.py`](src/ortla/direction_split.py),
 wired into `demand.predict_demand`.
 **Validation case:** `datasources/cases/07_improved_operator_loading` — case 06
 re-run on the same 270 trains with this one setting changed.

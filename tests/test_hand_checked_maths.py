@@ -20,28 +20,28 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from orta import appraisal as ea
-from orta import commercial_case as cc
-from orta import loading_data as ol
-from orta import network_assignment as na
-from orta import period_matrices as la
-from orta.clock import (
+from ortla import appraisal as ea
+from ortla import commercial_case as cc
+from ortla import loading_data as ol
+from ortla import network_assignment as na
+from ortla import period_matrices as la
+from ortla.clock import (
     WEEKDAYS_PER_YEAR,
     classify_minutes,
     classify_time_period,
     period_minutes,
     to_per_day,
 )
-from orta.demand import (
+from ortla.demand import (
     ChoiceTerms as _ChoiceTerms,
 )
-from orta.demand import (
+from ortla.demand import (
     _logit_share,
     calibrated_leg,
 )
-from orta.gravity_model import GravityModel
-from orta.hindcast import accuracy_metrics
-from orta.od_matrix import build_odm_matrix, read_odm, rebalance_to_station_totals
+from ortla.gravity_model import GravityModel
+from ortla.hindcast import accuracy_metrics
+from ortla.od_matrix import build_odm_matrix, read_odm, rebalance_to_station_totals
 
 CUTOFFS = {"am_peak": "07:00", "interpeak": "09:30", "pm_peak": "16:00", "evening": "19:00"}
 
@@ -322,7 +322,7 @@ def test_size_exponent_targets_shrink_the_gap_between_large_and_small_stations()
     # 10,000 and 100 entries with exponent -0.5: targets 10,000^0.5 =
     # 100 and 100^0.5 = 10, so the big station's share falls from 100x
     # to 10x the small one's. Zero entries drop out.
-    from orta.od_matrix import station_targets
+    from ortla.od_matrix import station_targets
 
     assert station_targets({"A": 10_000, "B": 100, "C": 0}, -0.5) == pytest.approx(
         {"A": 100, "B": 10}

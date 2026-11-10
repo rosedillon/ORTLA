@@ -6,20 +6,20 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from orta import direction_split
-from orta import network_assignment as na
-from orta.clock import (
+from ortla import direction_split
+from ortla import network_assignment as na
+from ortla.clock import (
     UNKNOWN_PERIOD,
     WEEKDAYS_PER_YEAR,
     cif_minutes,
     classify_minutes,
     classify_time_period,
 )
-from orta.config import CandidateService, ProposeConfig, ServiceStop
-from orta.demand import predict_demand
-from orta.service_lookup import extract_od_services
-from orta.service_lookup import filter_services as _filter_services
-from orta.stations import DEFAULT_STATION_RECODES, recode_columns, resolve_recodes
+from ortla.config import CandidateService, ProposeConfig, ServiceStop
+from ortla.demand import predict_demand
+from ortla.service_lookup import extract_od_services
+from ortla.service_lookup import filter_services as _filter_services
+from ortla.stations import DEFAULT_STATION_RECODES, recode_columns, resolve_recodes
 
 CUTOFFS = {"am_peak": "7:00", "interpeak": "9:30", "pm_peak": "16:00", "evening": "19:00"}
 WEDNESDAY = pd.Timestamp("2026-06-17")
@@ -468,7 +468,7 @@ def test_drop_detour_legs_drops_a_slow_leg_beside_a_fast_one() -> None:
 
 
 def test_per_train_path_serves_a_pair_once_and_obeys_the_detour_limit() -> None:
-    from orta import demand as sp
+    from ortla import demand as sp
 
     stops = [
         ServiceStop(station="LLL", departure="08:00"),
@@ -499,7 +499,7 @@ def test_per_train_path_serves_a_pair_once_and_obeys_the_detour_limit() -> None:
 
 
 def test_a_loop_never_prices_a_station_to_itself() -> None:
-    from orta import demand as sp
+    from ortla import demand as sp
 
     day = na.day_calls(_loop_calls(), WEDNESDAY, "Wednesday")
     legs = na.build_legs(day, CUTOFFS)
@@ -634,8 +634,8 @@ def test_predict_demand_weights_the_candidate_against_the_trains_in_its_slot(
 
 
 def test_a_strip_rule_naming_a_second_code_still_finds_its_trains():
-    from orta.config import StripRule
-    from orta.hindcast import recode_strip_rule, select_schedules
+    from ortla.config import StripRule
+    from ortla.hindcast import recode_strip_rule, select_schedules
 
     calls = recode_columns(
         pd.DataFrame(

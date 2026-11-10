@@ -9,11 +9,11 @@ import pandas as pd
 import pytest
 from test_network_assignment import CUTOFFS, WEDNESDAY, _train
 
-from orta import demand
-from orta import network_assignment as na
-from orta.config import ServiceStop
-from orta.slot_net import FEATURES, SlotShareNet
-from orta.stations import resolve_aliases
+from ortla import demand
+from ortla import network_assignment as na
+from ortla.config import ServiceStop
+from ortla.slot_net import FEATURES, SlotShareNet
+from ortla.stations import resolve_aliases
 
 
 @pytest.fixture(scope="module")

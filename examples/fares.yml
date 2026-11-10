@@ -1,4 +1,4 @@
-# Config for: orta fares
+# Config for: ortla fares
 # Look up official RSP standard fares (Anytime/Off-Peak/Season/etc.) between
 # station pairs, from the National Rail Data Portal's Fares Feed.
 #
@@ -7,7 +7,7 @@
 #
 # Copy this file into configs/ (which is gitignored) and fill in your own
 # paths before running:
-#   orta fares configs/fares.yml
+#   ortla fares configs/fares.yml
 output_path: "outputs/fares"
 
 # Either point this at an already-extracted feed directory (containing the

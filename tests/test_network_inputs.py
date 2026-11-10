@@ -14,8 +14,8 @@ import pathlib
 
 import pandas as pd
 
-from orta.discovery import _drop_well_served_pairs
-from orta.timetable import load_tiploc_crs_map
+from ortla.discovery import _drop_well_served_pairs
+from ortla.timetable import load_tiploc_crs_map
 
 _STATIONS = [
     ("London Waterloo", "WAT"),
@@ -147,3 +147,19 @@ def test_genuinely_unserved_pairs_survive_the_symmetric_test() -> None:
     # Absent from the summary in both directions: no direct service,
     # kept at 0.
     assert kept == [("GTW", "BHM", 117.8, 0.0)]
+
+
+def test_tiploc_map_takes_corpus_then_timetable_then_station_list(tmp_path):
+    from ortla.stations import tiploc_to_crs_map
+
+    calls = tmp_path / "calls.csv"
+    pd.DataFrame({"tiploc": ["CLPHMJC", "STPANCI"], "crs": ["CLJ", "XXX"]}).to_csv(calls)
+    listed = tmp_path / "stations.csv"
+    pd.DataFrame({"stationName": ["Leeds"], "tiploc": ["LEEDS"], "crsCode": ["LDZ"]}).to_csv(
+        listed
+    )
+    mapping = tiploc_to_crs_map(listed, calls)
+    assert mapping["FENTON"] == "FMA"  # CORPUS only
+    assert mapping["CLPHMJC"] == "CLJ"  # platform TIPLOC from the timetable
+    assert mapping["STPANCI"] == "SPX"  # CORPUS wins over the timetable
+    assert mapping["LEEDS"] == "LDZ"  # the station list wins over both

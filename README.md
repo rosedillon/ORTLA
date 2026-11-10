@@ -1,36 +1,17 @@
-<h1 align="center">ORTA</h1>
+# ORTLA: Open Rail Train-level Assignment
 
-<p align="center">
-  <b>Open Rail Train-level Assignment</b><br>
-  Passenger demand for every train on the rail network in Great Britain
-</p>
+Passenger demand for every train on the rail network in Great Britain.
 
-<p align="center">
-  <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white">
-  <img alt="Licence: GPL v3" src="https://img.shields.io/badge/licence-GPL%20v3-blue">
-  <img alt="Tests: 252 passing" src="https://img.shields.io/badge/tests-252%20passing-2ea44f">
-  <img alt="Code style: ruff" src="https://img.shields.io/badge/code%20style-ruff-D7FF64?logo=ruff&logoColor=black">
-  <img alt="Desktop app: Qt" src="https://img.shields.io/badge/desktop%20app-Qt-41CD52?logo=qt&logoColor=white">
-</p>
+![The 1,500 busiest links between calls on a Wednesday](docs/images/links.png)
 
-<p align="center">
-  <img src="docs/images/links.png" width="49%" alt="The 1,500 busiest links between calls on a Wednesday">
-  <img src="docs/images/boardings.png" width="49%" alt="Passengers boarding at each station on a Wednesday">
-</p>
+ORTLA splits the ORR's annual origin to destination matrix (ODM) by day of the week and time of
+day, using operators' loading counts, then puts that demand onto the timetable train by train.
+One run loads the roughly 23,000 trains that run on a weekday and scores every load it can
+match against the counts.
 
-ORTA turns the ORR's annual origin to destination matrix (ODM) and operators' loading
-counts into demand by day of the week and time of day, then puts that demand onto the
-timetable train by train. One run loads all of the roughly 23,000 trains that run on a
-weekday and scores every load it can match against the counts.
-
-The same model answers the planning questions: how many people would use a new or
-retimed service, whether it fits the timetable, what it is worth on DfT TAG values,
-what it would earn an operator, and how many people a new station would draw. Services
-that have already launched can be hindcast, so a forecast can be checked against what
-actually happened.
-
-Everything runs from the command line or from a desktop app with interactive charts
-and maps.
+The same model forecasts new and retimed services (demand, timetable fit, TAG appraisal and the
+operator's commercial case) and new stations. Services that have already launched can be
+hindcast, so a forecast can be checked against what happened.
 
 ## Contents
 
@@ -48,32 +29,32 @@ and maps.
 
 ## Accuracy
 
-With the adopted settings, `orta assign` was run over all five weekdays of the
+With the adopted settings, `ortla assign` was run over all five weekdays of the
 timetable and scored against nine operators' counts.
 
 | Operator | Counted segments | Predicted / counted | rmse(log) |
 | --- | ---: | ---: | ---: |
-| Avanti West Coast | 6,144 | 1.03 | 0.41 |
-| Govia Thameslink Railway | 174,566 | 0.98 | 0.46 |
-| Greater Anglia | 50,362 | 0.99 | 0.46 |
-| Northern | 141,134 | 1.03 | 0.46 |
-| Southeastern | 74,402 | 0.95 | 0.49 |
-| South Western Railway | 50,614 | 0.95 | 0.54 |
-| TransPennine Express | 14,179 | 1.07 | 0.60 |
-| Great Western Railway | 31,727 | 0.97 | 0.61 |
-| East Midlands Railway | 4,685 | 1.11 | 0.74 |
-| **All nine** | **547,813** | **0.98** | **0.49** |
+| Avanti West Coast | 6,089 | 1.02 | 0.42 |
+| Northern | 141,134 | 1.00 | 0.43 |
+| Govia Thameslink Railway | 176,729 | 0.92 | 0.45 |
+| Greater Anglia | 50,362 | 0.98 | 0.46 |
+| Southeastern | 74,769 | 0.95 | 0.49 |
+| South Western Railway | 50,614 | 0.95 | 0.53 |
+| TransPennine Express | 14,858 | 1.01 | 0.58 |
+| Great Western Railway | 31,726 | 0.96 | 0.61 |
+| East Midlands Railway | 5,588 | 0.91 | 0.72 |
+| **All nine** | **551,869** | **0.95** | **0.48** |
 
 A segment is one train between two calls. The rmse(log) is the root mean square of
-log(predicted / counted), so 0.49 means a typical segment is within a factor of about
-1.6 of its count. These figures are in sample. Measured on corridors held out of
-fitting, the same settings score 0.461 on a screened set of counts. South Western
-Railway is scored on its counts from before April 2026, when the basis of its counts
-changed.
+log(predicted / counted), so 0.48 means a typical segment is within a factor of about 1.6 of
+its count. These figures are mostly in sample; on corridors held out of fitting the same
+settings score 0.461. Two sets were never used in fitting: East Midlands Railway is scored only
+on its counts from 23 August to 17 October 2026, and TransPennine Express's second count file is
+scored alongside its first. South Western Railway is scored on its counts from before April 2026, when the
+basis of its counts changed. The settings and data behind this table are in
+[`configs/paper/reference.yml`](configs/paper/reference.yml).
 
-<p align="center">
-  <img src="docs/images/scatter.png" width="85%" alt="Predicted against counted load on 538,527 segments">
-</p>
+![Predicted against counted load on 538,527 segments](docs/images/scatter.png)
 
 ## What it does
 
@@ -91,30 +72,33 @@ flowchart LR
     SDFT[Station data] --> newstation[new-station]
 ```
 
-- **Demand by period.** The annual ODM is split by day of the week and time period
-  using the operators' counts, with a station size correction and an hourly OD profile.
-- **Train loading.** Each slot's demand is shared between the trains that serve it.
-  A small neural network reads each train's place in the day's timetable (the gap to
-  the trains either side, the stops between and so on) to decide its share. One-change
-  journeys are routed through interchanges, and a fitted direction split tells the
-  morning peak into London from the evening peak out.
-- **Forecasting.** A candidate service gets the share it would take if it were added to
-  the timetable, plus an uplift for station pairs that gain a direct link. Feasibility
-  checks use BPLAN running times, headways and HSP. Appraisal uses the TAG Data Book,
-  and the commercial case reports NPV, IRR and payback.
-- **New stations.** A port of the Station Demand Forecasting Tool's model, with 80% and
-  90% intervals and the demand taken from neighbouring stations.
-- **Hindcasts.** A launched service is stripped from the timetable, predicted, and
-  compared with its counts.
+The annual ODM is split by day of the week and time period using the operators' counts, with
+a station size correction and SRAM's hourly OD profile. Each slot's demand is then shared
+between the trains serving it; a small neural network reads each train's place in the day's
+timetable (the gaps to the trains either side, the stops between) to set its share. One-change
+journeys are routed through interchanges, and a fitted direction split tells the morning peak
+into London from the evening peak out.
+
+A candidate service gets the share it would take if added to the timetable, plus an uplift
+where a station pair gains a direct link. Feasibility checks use BPLAN running times, headways
+and HSP; appraisal uses the TAG Data Book; the commercial case reports NPV, IRR and payback.
+
+New stations use a port of the Station Demand Forecasting Tool's model, adjusted by the
+residuals of established stations within a few kilometres. On 69 real openings that takes the
+error from 0.765 to 0.687 rmse(log), and the 80% and 90% intervals held. SDFT's own forecast is
+reported beside it.
+
+A hindcast strips a launched service from the timetable, predicts it and compares it with its
+counts.
 
 ## Installation
 
-ORTA needs Python 3.11 or later. It is not on PyPI yet, so install it from a clone:
+ORTLA needs Python 3.11 or later. It is not on PyPI yet, so install it from a clone:
 
 ```sh
 git clone https://github.com/rosedillon/ORTLA.git
 cd ORTLA
-pip install -e ".[gui]"        # add ,dev for the test and lint tools
+pip install -e ".[dev]"        # add ,gui for the desktop app
 ```
 
 ## Quick start
@@ -126,9 +110,9 @@ paths and any NRDP password), fill in the paths, and run it:
 ```sh
 mkdir -p configs
 cp examples/matrix.yml examples/loading.yml examples/assign.yml configs/
-orta matrix  configs/matrix.yml     # annual station to station matrix
-orta loading configs/loading.yml    # matrices by day and period
-orta assign  configs/assign.yml     # load every train and score it
+ortla matrix  configs/matrix.yml     # annual station to station matrix
+ortla loading configs/loading.yml    # matrices by day and period
+ortla assign  configs/assign.yml     # load every train and score it
 ```
 
 `assign` writes five tables to its output folder:
@@ -141,7 +125,7 @@ orta assign  configs/assign.yml     # load every train and score it
 | `assign_links.csv` | Pair of consecutive calls: passengers over the day. |
 | `assign_scores.csv` | Operator: segments scored, predicted / counted and rmse(log). |
 
-`orta -h` lists the commands. Configs are read as strict YAML, which rejects inline
+`ortla -h` lists the commands. Configs are read as strict YAML, which rejects inline
 lists such as `[a, b]`, so write lists one item per line:
 
 ```yaml
@@ -152,7 +136,7 @@ days:
 
 ## Commands
 
-Each command is run as `orta <command> <config.yml>`.
+Each command is run as `ortla <command> <config.yml>`.
 
 | Command | What it does |
 | --- | --- |
@@ -172,21 +156,26 @@ Each command is run as `orta <command> <config.yml>`.
 | `discover` | Scan the network for new direct services worth a closer look. |
 | `new-station` | Forecast a new station's annual entries and exits, with 80% and 90% intervals. |
 
-The loading readers cover Northern, TransPennine Express, Avanti West Coast, East
-Midlands Railway, Great Western Railway, Govia Thameslink Railway, South Western
-Railway, Southeastern and Greater Anglia.
+`timetable` also writes the CIF's joins and divides (`timetable_associations.csv`), which
+`assign` reads as `associations_path`.
+
+The loading readers cover Northern, TransPennine Express, Avanti West Coast, East Midlands
+Railway, Great Western Railway, Govia Thameslink Railway, South Western Railway, Southeastern
+and Greater Anglia. Each operator's counts are a folder; every file in it is read, and files
+without dates count as separate periods.
 
 ## The adopted model
 
-Every model setting is off by default, so a config without them runs the plain model.
-The `assign`, `propose`, `scenario` and `hindcast` templates already carry the settings
-that scored best on held-out corridors:
+Every model setting is off by default, so a config without them runs the plain model. The
+`assign`, `propose`, `scenario` and `hindcast` templates carry the settings that scored best on
+held-out corridors, and [`configs/paper/reference.yml`](configs/paper/reference.yml) is the full
+reference run:
 
 ```yaml
 direction_split_model: national
 slot_share_model: neural
 slot_share_profile: "/path/to/SRAM_Summer24_O03_ODHourlyRoutes.parquet"
-transfer_scale: 1.20
+transfer_scale: 1.0
 transfer_scale_london: 2.30
 transfer_choice_theta: 0.2
 ```
@@ -207,7 +196,7 @@ giving a path:
 ## Desktop app
 
 ```sh
-orta-gui            # or: python -m orta.gui
+ortla-gui            # or: python -m ortla.gui; needs the gui extra
 ```
 
 The app runs every command. Its Analysis page builds a form from each command's
@@ -225,12 +214,12 @@ or under, while `assign` gets the charts shown on this page.
 | Maps | Draw the whole track network, coloured by daily trains. |
 | Help | A Quick Start page that sets up a data folder, and a reference page per command. |
 
-A project (a `.orta` file) remembers every command's settings. Charts work offline;
+A project (a `.ortla` file) remembers every command's settings. Charts work offline;
 map tiles need an internet connection.
 
 ## Data
 
-ORTA reads published industry data. None of it is included here.
+ORTLA reads published industry data. None of it is included here.
 
 | Data | Source | Used by |
 | --- | --- | --- |
@@ -241,12 +230,13 @@ ORTA reads published industry data. None of it is included here.
 | Fares feed (RSP) | Rail Delivery Group, through NRDP | `fares`, `commercial` |
 | Loading counts | Train operators | `loading`, `assign` scores |
 | Hourly OD profile (SRAM) | Network Rail | `loading`, slot share |
+| CORPUS (TIPLOC, CRS, NLC) | Network Rail open data | station codes (shipped in `ortla/models`) |
 
 ## Repository layout
 
 | Folder | Contents |
 | --- | --- |
-| `src/orta` | The package, one module per job, and `gui/` for the desktop app. |
+| `src/ortla` | The package, one module per job, and `gui/` for the desktop app. |
 | `tests` | Unit tests, including hand-worked checks of the model's arithmetic. |
 | `examples` | A template config for every command. |
 | `scripts` | Data preparation, such as the station covariates `new-station` reads. |
@@ -259,7 +249,7 @@ ORTA reads published industry data. None of it is included here.
 | --- | --- |
 | `config` | The config model for every command, read from YAML. |
 | `clock` | Clock times, weekdays and the periods a day is split into. |
-| `stations` | Station codes, aliases and second codes, station lists, table 1410 footfall. |
+| `stations` | Station codes, aliases and second codes, TIPLOC to CRS, table 1410 footfall. |
 | `track_distance` | Distances along the track model. |
 | `od_matrix` | Read, build and rebalance the annual ODM. |
 | `loading_data` | Read each operator's counts into one schema and time each row. |
@@ -286,7 +276,7 @@ ORTA reads published industry data. None of it is included here.
 | `scenario` | Scenario Studio: sweep, check and appraise a candidate. |
 | `discovery` | The network scan for new direct services. |
 | `hindcast` | Strip, predict and compare a launched service. |
-| `new_station` | The `new-station` command: SDFT's station choice, catchment and trip end. |
+| `new_station` | The `new-station` command: SDFT's model plus nearby stations' residuals. |
 | `gui` | The desktop app (optional; needs the `gui` extra). |
 
 </details>
@@ -304,10 +294,11 @@ ruff check .      # lint
 ruff format .     # format
 ```
 
-The desktop app's tests are skipped without the `gui` extra. On a machine with no
-display, set `QT_QPA_PLATFORM=offscreen`. The code follows PEP 8 with 99-character
-lines, and docstrings use the numpy layout. See [CONTRIBUTING.md](CONTRIBUTING.md).
+The desktop app's tests are skipped without the `gui` extra. On a machine with no display, set
+`QT_QPA_PLATFORM=offscreen`. Lines are 99 characters. A docstring says what the signature does
+not: a one-liner for a small function, more where there is a reason or a data quirk to record.
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Licence
 
-ORTA is free software under the [GNU General Public License v3](LICENSE).
+ORTLA is free software under the [GNU General Public License v3](LICENSE).

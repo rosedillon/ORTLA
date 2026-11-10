@@ -481,7 +481,7 @@ commuter trains. Four trains cannot settle it; the national check in §5 can.
 
 Case 16 (`datasources/cases/16_national_base_year/`, `PLAN.md` then
 `RESULTS.md`) assigns the ODM to every train in the May 2026 timetable with
-`orta.network_assignment`, and scores it on 490,537 counted
+`ortla.network_assignment`, and scores it on 490,537 counted
 segments of nine operators. It reproduces case 06 exactly, leg for leg. Three
 things above change.
 
@@ -557,7 +557,7 @@ All three were made on 28 September (§7.1).
 
 ### 7.1 The fixes in the model, checked leg for leg
 
-What changed (`orta`; the first two are on by default):
+What changed (`ortla`; the first two are on by default):
 - **Second codes.** `station_aliases.DEFAULT_STATION_RECODES` holds the twenty
   second codes. They are rewritten in the timetable, and in any count feed
   matched to it, as soon as each is read (`station_recodes`; `{}` turns it

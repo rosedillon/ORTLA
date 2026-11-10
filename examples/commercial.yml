@@ -1,4 +1,4 @@
-# Config for: orta commercial
+# Config for: ortla commercial
 # Operator financial viability of one (or more) proposed rail services: fare
 # revenue as income against capital and operating costs. Produces NPV, IRR,
 # payback period, discounted cashflow and a sensitivity/tornado table.
@@ -9,7 +9,7 @@
 # social discount rates.
 #
 # Copy this file into configs/ (which is gitignored) and edit before running:
-#   orta commercial configs/commercial.yml
+#   ortla commercial configs/commercial.yml
 output_path: "outputs/commercial"
 
 # The service(s) to appraise. For a single proposed service, list just one.

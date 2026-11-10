@@ -1,9 +1,9 @@
-# Config for: orta matrix
+# Config for: ortla matrix
 # Build the annual origin-destination matrix from the source ODM.
 #
 # Copy this file into configs/ (which is gitignored) and fill in your own
 # data source paths before running:
-#   orta matrix configs/matrix.yml
+#   ortla matrix configs/matrix.yml
 output_path: "outputs/loading"
 
 source_odm: "/path/to/datasources/ODM_for_RDM_2024-25.csv"

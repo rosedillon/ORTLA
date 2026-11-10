@@ -3,9 +3,9 @@ requires = ["setuptools>=64.0.0", "versioningit"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "orta"
+name = "ortla"
 dynamic = ["version", "dependencies", "optional-dependencies"]
-description = "ORTA (Open Rail Train-level Assignment): open rail demand modelling for Great Britain."
+description = "ORTLA (Open Rail Train-level Assignment): open rail demand modelling for Great Britain."
 readme = "README.md"
 license = { "file" = "LICENSE" }
 requires-python = ">=3.11"
@@ -19,10 +19,10 @@ classifiers = [
 ]
 
 [project.scripts]
-orta = "orta.__main__:main"
+ortla = "ortla.__main__:main"
 
 [project.gui-scripts]
-orta-gui = "orta.gui:launch"
+ortla-gui = "ortla.gui:launch"
 
 [tool.setuptools.dynamic]
 dependencies = { "file" = "requirements.txt" }
@@ -41,8 +41,8 @@ sdist = "versioningit.cmdclass.sdist"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"orta" = ["py.typed"]
-"orta.models" = ["*.json"]
+"ortla" = ["py.typed"]
+"ortla.models" = ["*.json", "*.csv"]
 
 # Linters
 [tool.ruff]
@@ -64,7 +64,6 @@ select = [
     "G",    # flake8-logging-format
     "N",    # pep8-naming
     "D",    # pydocstyle
-    "DOC",  # pydoclint
     "PL",   # pylint
     "BLE",  # flake8-blind-except
     "ERA",  # eradicate (commented out code)
@@ -98,7 +97,8 @@ ignore = [
     "TRY003", # long messages in exceptions (tryceratops)
     "SIM108", # one line if else (flake8-bandit)
     "S311",   # random.random not allowed (flake8-bandit)
-    "DOC502", # docstring-extraneous-exception (sometimes necessary)
+    # A short function's name and signature are its documentation.
+    "D102", "D103", "D105", "D107",
     "ANN003", # type annotation for **kwargs
 ]
 unfixable = [
@@ -110,7 +110,6 @@ unfixable = [
 "__init__.py" = ["F401"] # allow unused imports
 "tests/*" = [
     "S101",    # use of assert in tests
-    "DOC",     # docstring issues
     "D1",      # a test's name says what it checks
     "ANN",     # test functions need no annotations
     "PLC0415", # some tests import inside the test on purpose
@@ -135,7 +134,7 @@ unfixable = [
 ]
 
 [tool.ruff.lint.pycodestyle]
-max-doc-length = 72
+max-doc-length = 99
 
 [tool.ruff.lint.pydocstyle]
 convention = "numpy"
@@ -154,8 +153,7 @@ allow-magic-value-types = ["int", "str", "bytes"]
 
 [tool.ruff.format]
 docstring-code-format = true
-# Docstring code keeps to the 72-character doc lines.
-docstring-code-line-length = 64
+docstring-code-line-length = 88
 
 # Only necessary until pylint is fully covered by ruff
 [tool.pylint.design]
@@ -181,7 +179,7 @@ extension-pkg-allow-list = []
 ignore = ["__init__.py", "_version.py"]
 
 [tool.mypy]
-packages = ["orta"]
+packages = ["ortla"]
 namespace_packages = true
 ignore_missing_imports = true
 allow_redefinition = true
@@ -191,8 +189,8 @@ allow_redefinition = true
 pythonpath = ["src"]
 testpaths = ["tests", "src"]
 addopts = """\
-    --cov=orta --cov-report=xml -n auto \
-    --doctest-modules --ignore=examples --ignore=cases --ignore=src/orta/gui --ignore=src/open_rail_model --ignore-glob=*/._* \
+    --cov=ortla --cov-report=xml -n auto \
+    --doctest-modules --ignore=examples --ignore=cases --ignore=src/ortla/gui --ignore=src/open_rail_model --ignore-glob=*/._* \
     --junitxml=junit.xml -o junit_family=legacy\
     """
 
@@ -206,8 +204,8 @@ match = ["v*"]
 default-tag = "0.0.1"
 
 [tool.versioningit.onbuild]
-source-file = "src/orta/_version.py"
-build-file = "orta/_version.py"
+source-file = "src/ortla/_version.py"
+build-file = "ortla/_version.py"
 
 [tool.versioningit.format]
 distance = "{base_version}+{distance}.{vcs}{rev}"

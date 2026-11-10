@@ -29,9 +29,10 @@ Contributions are welcome. The code is under the GNU GPL v3 (see [LICENSE](LICEN
 
 ## Style
 
-The code follows PEP 8 with 99-character lines. Comments and docstrings wrap at 72
-characters, and docstrings use the numpy layout: a one-line summary, then the
-`Parameters`, `Returns` and `Raises` sections where they apply.
+The code follows PEP 8 with 99-character lines, docstrings included. A docstring says what the
+name and signature do not: one line for a small function, more where there is a reason, a unit
+or a data quirk to record. Comments explain why, not what. Leave out `Parameters` and `Returns`
+sections that only repeat the signature.
 
 Never commit a file under `configs/`. Those files hold local data paths, and the
 `fares` and `propose` configs hold an NRDP password.

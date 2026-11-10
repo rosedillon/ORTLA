@@ -1,9 +1,9 @@
-# Config for: orta distance
+# Config for: ortla distance
 # Calculate the track distance along a sequence of stations.
 #
 # Copy this file into configs/ (which is gitignored) and fill in your own
 # data source paths before running:
-#   orta distance configs/distance.yml
+#   ortla distance configs/distance.yml
 output_path: "outputs/distance"
 
 station_codes:

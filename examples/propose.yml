@@ -1,4 +1,4 @@
-# Config for: orta propose
+# Config for: ortla propose
 # Check candidate new/altered services for timetable feasibility: is each
 # leg's proposed running time physically achievable (BPLAN Geography), and
 # does the departure clash with an existing scheduled train on the same
@@ -8,7 +8,7 @@
 #
 # Copy this file into configs/ (which is gitignored) and fill in your own
 # data source paths before running:
-#   orta propose configs/propose.yml
+#   ortla propose configs/propose.yml
 output_path: "outputs/propose"
 
 timetable_calls_path: "outputs/timetable/timetable_calls.csv"
@@ -22,13 +22,13 @@ frequency_elasticity: 0.4
 # The adopted model: case 117's settings, held out by corridor at
 # rmse(log) 0.461 on nine operators' counts. Each is off by default, so
 # leave them out to run the plain model. "national" and "neural" name
-# fitted models that ship with ORTA.
+# fitted models that ship with ORTLA.
 direction_split_model: national
 slot_share_model: neural
 # Network Rail SRAM's hourly OD demand (output O03, from the Rail Data
 # Marketplace). The neural slot share was fitted with it on.
 slot_share_profile: "/path/to/datasources/sram/SRAM_Summer24_O03_ODHourlyRoutes.parquet"
-transfer_scale: 1.20
+transfer_scale: 1.0
 transfer_scale_london: 2.30
 transfer_choice_theta: 0.2
 

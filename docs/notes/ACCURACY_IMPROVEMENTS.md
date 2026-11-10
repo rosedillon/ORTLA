@@ -125,7 +125,7 @@ directly:
 ### Measured: case 08
 
 Implemented as `rebalance_to_table_1410` on the loading config
-([`od_matrix.py`](src/orta/od_matrix.py)) and run over case
+([`od_matrix.py`](src/ortla/od_matrix.py)) and run over case
 06's own 270 trains. Full result in
 `datasources/cases/08_table_1410_rebalance/RESULTS.md`.
 

@@ -12,7 +12,7 @@ standing in for corridor type.
 Getting past that means watching one pair's demand move when that same
 pair's frequency moves. This builds that panel: the ORR ODM for several
 financial years against the timetable published in each of those years,
-read from the archive CIFs by :mod:`orta.cif_archive`.
+read from the archive CIFs by :mod:`ortla.cif_archive`.
 Differencing removes everything fixed about the pair (its population,
 its distance, its corridor type), leaving the association between a
 change in service and a change in demand on the same flow.
@@ -43,8 +43,8 @@ import pandas as pd
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "src"))
 
-from orta.gravity_model import load_direct_frequency
-from orta.od_matrix import read_odm
+from ortla.gravity_model import load_direct_frequency
+from ortla.od_matrix import read_odm
 
 DATASOURCES = pathlib.Path(os.environ.get("ORM_DATA", "/Volumes/ENGG341/datasources"))
 # The era timetables; ORM_OUT points a regeneration at its own

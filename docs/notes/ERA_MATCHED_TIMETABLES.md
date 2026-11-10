@@ -10,7 +10,7 @@ timetable that, for 88% of rows, was not running when the count was taken.
 
 The archive extracts that fix this are published in the original 80-column
 fixed-width CIF, which the parser could not read. It can now
-(`src/orta/cif_archive.py`).
+(`src/ortla/cif_archive.py`).
 
 ---
 
