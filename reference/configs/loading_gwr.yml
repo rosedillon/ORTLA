@@ -1,0 +1,64 @@
+# Great Western Railway period matrices from the operator's counts (ortla loading).
+output_path: "{OUT}/baselines/gwr"
+source_odm: "{DATA}/ODM_for_RDM_2024-25.csv"
+date_from: "2026-05-31"
+date_to: "2026-08-22"
+matrix_operators:
+  - gwr
+loading_paths:
+  gwr: "{DATA}/gwr-loading-data"
+table_1410: "{DATA}/table-1410/by_year/table_1410_2024_25.csv"
+station_list: "{DATA}/stations.csv"
+tiploc_crs_calls_path: "{OUT}/timetable_sep/timetable_calls.csv"
+route_frequency_path: "{OUT}/timetable_sep/route_frequency_summary.csv"
+cache_dir: "{OUT}/cache"
+nlc_reference_paths:
+  - "{DATA}/ODM_for_RDM_2024-25.csv"
+  - "{DATA}/old-odm/ODM_for_rdm_2023-24.csv"
+  - "{DATA}/old-odm/ODM_for_rdm_2019-20.csv"
+airport_stations:
+  - MIA
+  - GTW
+  - LTN
+  - LUA
+  - BHI
+  - PRA
+  - HXX
+  - HWV
+  - SSD
+  - LPY
+  - EGY
+time_periods_cutoffs:
+  am_peak: "7:00"
+  interpeak: "9:30"
+  pm_peak: "16:00"
+  evening: "19:00"
+route_type:
+  bands:
+    commute: 30
+    regional: 100
+  fallback: long_distance
+analysis:
+  day_order:
+    - Monday
+    - Tuesday
+    - Wednesday
+    - Thursday
+    - Friday
+    - Saturday
+    - Sunday
+  time_order:
+    - early
+    - am_peak
+    - interpeak
+    - pm_peak
+    - evening
+distance:
+  track_shapefile: "{DATA}/NWR_TrackModel20260904/NWR_TrackCentreLines.shp"
+  stations:
+    path: "{DATA}/stations.csv"
+    crs: crsCode
+    lat: lat
+    lon: long
+station_size_exponent: -0.097
+od_profile_path: "{DATA}/sram/SRAM_Summer24_O03_ODHourlyRoutes.parquet"

@@ -52,7 +52,7 @@ settings score 0.461. Two sets were never used in fitting: East Midlands Railway
 on its counts from 23 August to 17 October 2026, and TransPennine Express's second count file is
 scored alongside its first. South Western Railway is scored on its counts from before April 2026, when the
 basis of its counts changed. The settings and data behind this table are in
-[`configs/paper/reference.yml`](configs/paper/reference.yml).
+[`reference/`](reference), with the script that rebuilds the model from the raw files.
 
 ![Predicted against counted load on 538,527 segments](docs/images/scatter.png)
 
@@ -70,6 +70,8 @@ flowchart LR
     timetable --> propose & scenario & hindcast & discover
     propose --> commercial
     SDFT[Station data] --> newstation[new-station]
+    SDFT --> ensemble[station-ensemble]
+    ODM --> ensemble
 ```
 
 The annual ODM is split by day of the week and time period using the operators' counts, with
@@ -83,10 +85,13 @@ A candidate service gets the share it would take if added to the timetable, plus
 where a station pair gains a direct link. Feasibility checks use BPLAN running times, headways
 and HSP; appraisal uses the TAG Data Book; the commercial case reports NPV, IRR and payback.
 
-New stations use a port of the Station Demand Forecasting Tool's model, adjusted by the
-residuals of established stations within a few kilometres. On 69 real openings that takes the
-error from 0.765 to 0.687 rmse(log), and the 80% and 90% intervals held. SDFT's own forecast is
-reported beside it.
+New stations have two models. `new-station` is a port of the Station Demand Forecasting Tool's
+model, adjusted by the residuals of established stations within a few kilometres. On 69 real
+openings that takes the error from 0.765 to 0.687 rmse(log). `station-ensemble` goes further: it
+adds a gravity model's reach of the network, and terms for visitors, jobs, Sunday service and
+staffing, to SDFT's trip end. It fits that trip end thirteen ways and averages them. On the same
+69 openings it scores 0.440, with a median forecast of 0.94 of the outturn and 80% intervals
+about x/1.8 wide. See [its README](src/ortla/station_ensemble/README.md).
 
 A hindcast strips a launched service from the timetable, predicts it and compares it with its
 counts.
@@ -155,6 +160,7 @@ Each command is run as `ortla <command> <config.yml>`.
 | `scenario` | Sweep departure times and frequencies for a candidate and appraise each. |
 | `discover` | Scan the network for new direct services worth a closer look. |
 | `new-station` | Forecast a new station's annual entries and exits, with 80% and 90% intervals. |
+| `station-ensemble` | Forecast stations' entries and exits with the thirteen-member ensemble, the more accurate model. |
 
 `timetable` also writes the CIF's joins and divides (`timetable_associations.csv`), which
 `assign` reads as `associations_path`.
@@ -168,8 +174,8 @@ without dates count as separate periods.
 
 Every model setting is off by default, so a config without them runs the plain model. The
 `assign`, `propose`, `scenario` and `hindcast` templates carry the settings that scored best on
-held-out corridors, and [`configs/paper/reference.yml`](configs/paper/reference.yml) is the full
-reference run:
+held-out corridors, and [`reference/configs/reference.yml`](reference/configs/reference.yml) is
+the full reference run:
 
 ```yaml
 direction_split_model: national
@@ -224,13 +230,17 @@ ORTLA reads published industry data. None of it is included here.
 | Data | Source | Used by |
 | --- | --- | --- |
 | Origin to destination matrix (ODM) | ORR | `matrix` |
-| Estimates of station usage (table 1410) | ORR | the ODM rebalance, `new-station` |
+| Estimates of station usage (table 1410) | ORR | the ODM rebalance, `new-station`, `station-ensemble` |
 | Timetable (CIF) | Network Rail open data | `timetable`, `assign`, forecasting |
 | BPLAN Geography | Network Rail | `bplan`, `propose` |
 | Fares feed (RSP) | Rail Delivery Group, through NRDP | `fares`, `commercial` |
 | Loading counts | Train operators | `loading`, `assign` scores |
 | Hourly OD profile (SRAM) | Network Rail | `loading`, slot share |
 | CORPUS (TIPLOC, CRS, NLC) | Network Rail open data | station codes (shipped in `ortla/models`) |
+| Census 2011 and 2021, Code-Point Open, NaPTAN, OpenStreetMap, Wikidata | ONS, NRS, Ordnance Survey, DfT, OSM contributors | `new-station`, `station-ensemble` |
+
+`station-ensemble` reads a folder of inputs laid out as in
+[`src/ortla/station_ensemble/README.md`](src/ortla/station_ensemble/README.md).
 
 ## Repository layout
 
@@ -240,6 +250,7 @@ ORTLA reads published industry data. None of it is included here.
 | `tests` | Unit tests, including hand-worked checks of the model's arithmetic. |
 | `examples` | A template config for every command. |
 | `scripts` | Data preparation, such as the station covariates `new-station` reads. |
+| `reference` | The reference train-loading model's configs and the script that rebuilds it. |
 | `docs` | Notes on why the model is built the way it is, and what was tried. |
 
 <details>
@@ -277,6 +288,7 @@ ORTLA reads published industry data. None of it is included here.
 | `discovery` | The network scan for new direct services. |
 | `hindcast` | Strip, predict and compare a launched service. |
 | `new_station` | The `new-station` command: SDFT's model plus nearby stations' residuals. |
+| `station_ensemble` | The `station-ensemble` command: thirteen trip ends on a gravity model's reach, averaged. |
 | `gui` | The desktop app (optional; needs the `gui` extra). |
 
 </details>
