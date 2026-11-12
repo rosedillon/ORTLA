@@ -26,9 +26,9 @@ Where it departs from SDFT:
 
 Then the forecast borrows the residuals of established stations nearby, weighted exp(-km / 2)
 and shrunk by kappa 0.25: half of SDFT's unexplained variance is spatial at about 10 km. On 69
-openings this takes rmse(log) from 0.765 to 0.687 (cases 107, 160). The 80% and 90% intervals
+openings this takes rmse(log) from 0.765 to 0.687. The 80% and 90% intervals
 are the quantiles of the calibration stations' leave-one-out residuals; on the 69 openings they
-covered 0.84 and 0.93 (case 160).
+covered 0.84 and 0.93.
 
 The forecast uses the forecast timetable with the new stations in every postcode's choice set,
 so their catchments come out of their neighbours'. It is a median, not a mean.
@@ -217,7 +217,7 @@ def independent_services(stops_path: pathlib.Path) -> pd.Series:
     """Count each station's services in Network Rail SRAM's stops file (O04 StopsAndPasses).
 
     A service counts once per station where passengers may board or alight. SRAM reads its
-    timetable from a different extract, so it catches schedules missing from ours (case 205).
+    timetable from a different extract, so it catches schedules missing from ours.
     """
     s = pd.read_parquet(
         stops_path, columns=["VehicleJourneyNo", "ATOC", "CRS", "AlightAllowed", "BoardAllowed"]
@@ -251,7 +251,7 @@ def catchments(stations: pd.DataFrame, people: pd.DataFrame) -> pd.Series:
     }
     utility = (
         # Every station as near as the nearest counts as nearest, so a tie
-        # isn't broken by the tree's order (case 195, N4).
+        # isn't broken by the tree's order.
         CHOICE["nearest"] * (dist == dist[:, :1])
         + CHOICE["sqrt_km"] * np.sqrt(dist / 1000)
         + CHOICE["cat_f"] * attr["cat_f"]
@@ -456,7 +456,7 @@ def run_new_station(config: NewStationConfig) -> pd.DataFrame:
     forecast = sdft * np.exp(lift)
     # The trip end has a floor of exp(const) x frequency terms at zero
     # population and jobs, so an empty place still forecast thousands a
-    # year (case 195, N2). With nobody to serve, forecast nothing.
+    # year. With nobody to serve, forecast nothing.
     rows = after.loc[present]
     empty = ((rows["prw_pop"] < 1) & (rows["jobs"] < 1)).to_numpy()
     forecast = np.where(empty, 0.0, forecast)
@@ -485,7 +485,7 @@ def run_new_station(config: NewStationConfig) -> pd.DataFrame:
     )
     inputs = ["prw_pop", "freq", "jobs", "car_spaces", "electric", "terminus", "travelcard"]
     out = out.join(after.loc[present, [*inputs, "cat_f"]].round(1))
-    out = out.join(_lat_lon(after.loc[present]))
+    out = out.join(lat_lon(after.loc[present]))
     out.index.name = "crs"
     out.to_csv(config.output_path / "new_station_forecasts.csv")
 
@@ -510,14 +510,14 @@ def run_new_station(config: NewStationConfig) -> pd.DataFrame:
             "fitted": np.exp(trip_end(cal, const)).round(),
             "log_residual": fitted.round(3),
         }
-    ).join(_lat_lon(cal))
+    ).join(lat_lon(cal))
     stations.index.name = "crs"
     stations.to_csv(config.output_path / "new_station_calibration_stations.csv")
 
     before = features(attrs.drop(present), trains.drop(present, errors="ignore"), people, jobs)
     near = _neighbours(before, after, present, config.neighbour_km)
     if not near.empty:
-        near = near.join(_lat_lon(before.loc[near["neighbour"]]).reset_index(drop=True))
+        near = near.join(lat_lon(before.loc[near["neighbour"]]).reset_index(drop=True))
     near.to_csv(config.output_path / "new_station_neighbours.csv", index=False)
     logger.info("Calibrated constant %.4f on %d stations", const, len(cal))
     logger.info(
@@ -573,7 +573,8 @@ def _check_frequencies(
     return out[out["timetable"] == "forecast"]
 
 
-def _lat_lon(frame: pd.DataFrame) -> pd.DataFrame:
+def lat_lon(frame: pd.DataFrame) -> pd.DataFrame:
+    """Return the latitude and longitude of rows with grid columns ``e`` and ``n``."""
     lon, lat = _TO_GRID.transform(
         frame["e"].to_numpy(), frame["n"].to_numpy(), direction="INVERSE"
     )

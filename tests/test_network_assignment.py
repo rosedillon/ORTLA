@@ -189,8 +189,13 @@ def test_cif_times_read_like_the_scalar_parser():
     assert np.isnan(minutes[2:]).all()
 
 
-# --- journeys that change trains, and second station codes
-# ------------------
+def test_cif_minutes_keeps_half_minutes_when_asked():
+    minutes = cif_minutes(pd.Series(["0831H", "0831", None]), half_minutes=True)
+    assert minutes[:2].tolist() == [511.5, 511.0]
+    assert np.isnan(minutes[2])
+
+
+# Journeys that change trains, and second station codes
 
 
 @pytest.fixture
@@ -389,8 +394,7 @@ def test_predict_demand_adds_routed_trips_before_the_split(change_calls, matrice
     assert without["existing_annual_trips"] == pytest.approx(cell * factor)
 
 
-# --- Case 19: trains calling at a station twice, and the detour limit
-# ----------------------------
+# Trains calling at a station twice, and the detour limit
 def _loop_calls() -> pd.DataFrame:
     """A loop from LLL through BBB and back, and a train BBB -> LLL."""
     return pd.DataFrame(
@@ -514,8 +518,7 @@ def test_a_loop_never_prices_a_station_to_itself() -> None:
     assert ("LLL", "LLL") not in sp.shortest_legs(stops)
 
 
-# --- Case 23: slot shares by departure time and journey time
-# ------------------------------------
+# Slot shares by departure time and journey time
 def test_slot_shares_without_weights_are_the_equal_share(calls):
     legs = na.build_legs(na.day_calls(calls, WEDNESDAY, "Wednesday"), CUTOFFS)
     flat = na.SlotShareModel(timing={}, theta=0.0)

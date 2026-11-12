@@ -41,16 +41,12 @@ Victoria at 1.22, Manchester Airport at 0.65, London Road Brighton at
 0.60, and a tail of group and terminal stations. Those 85 or so stations
 are all the constraint changes.
 
-An earlier version of this module reported a median ODM/1410 ratio of
-1.25 (p5-p95 1.00-1.65), a regression coefficient of 1.009 (se 0.273)
-against case 06's log bias, and a "definitional" national gap of 1.246.
-Those figures were an artefact: every config was reading a 2022-23 table
-1410 against a 2024-25 ODM, and 1.246 is the growth in national station
-usage over those two years. On year-matched inputs the ratio has median
-1.000 and p5-p95 1.00-1.00. Anything resting on the old numbers,
-including case 08's "2.47% of variance", measures footfall ageing. With
-the years matched the constraint moves the national gravity fit from R^2
-0.7083 to 0.7085.
+Match the years. Read against a 2024-25 ODM, the 2022-23 table 1410
+gives a median ODM/1410 ratio of 1.25 (p5-p95 1.00-1.65), and 1.246 is
+just the growth in national station usage over those two years. On
+year-matched inputs the ratio has median 1.000 and p5-p95 1.00-1.00,
+and the constraint moves the national gravity fit from R^2 0.7083 to
+0.7085.
 
 The season-ticket mechanism is still real and documented. DfT's
 *Journeys per Season Ticket Study* (2019) measured 378 annual journeys

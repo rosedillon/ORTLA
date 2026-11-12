@@ -22,8 +22,8 @@ calls) carries
 
 A leg's trips board at its first call and alight at its last, so a
 train's load at each call is the running sum. With the adopted settings
-(``examples/best/``) this is case 117's model, held out by corridor at
-rmse(log) 0.461 on nine operators' counts.
+(``examples/assign.yml``; ``reference/configs/reference.yml`` in full) this is the reference
+model, held out by corridor at rmse(log) 0.461 on nine operators' counts.
 
 Trains of operators named in ``operators`` load from their own
 matrices; any other train loads from ``other_period_matrices_dir`` when
@@ -133,7 +133,7 @@ def assign_day(  # noqa: C901, PLR0912
 
     Demand is the fixed base-year matrix, so this loads a timetable; it does not forecast a
     change to it. Cut trains and their passengers move to the trains left, and a pair that
-    loses its direct train changes instead, adding a boarding (case 195). The direct and
+    loses its direct train changes instead, adding a boarding. The direct and
     changing journeys are logged and kept in ``attrs`` (``journeys_direct``,
     ``journeys_changing``); for a service change use ``propose`` or ``scenario``.
     """

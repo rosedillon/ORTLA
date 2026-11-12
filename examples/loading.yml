@@ -18,7 +18,7 @@ source_odm: "/path/to/datasources/ODM_for_RDM_2024-25.csv"
 
 # The adopted model's matrices: station totals corrected for size (case
 # 29) and each pair's day spread over periods towards Network Rail
-# SRAM's hourly profile (case 37). Leave both out for the plain ODM.
+# SRAM's hourly profile. Leave both out for the plain ODM.
 station_size_exponent: -0.097
 od_profile_path: "/path/to/datasources/sram/SRAM_Summer24_O03_ODHourlyRoutes.parquet"
 

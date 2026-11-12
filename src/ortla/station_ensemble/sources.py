@@ -10,7 +10,6 @@ import collections
 import dataclasses
 import logging
 import re
-from importlib import resources
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -18,7 +17,7 @@ import pandas as pd
 from pyproj import Transformer
 
 from ortla import new_station as ns
-from ortla.stations import resolve_aliases, resolve_recodes
+from ortla.stations import CORPUS_TIPLOCS, resolve_aliases, resolve_recodes
 from ortla.timetable import PASSENGER_CATEGORIES
 
 if TYPE_CHECKING:
@@ -97,14 +96,6 @@ def to_grid(lat: np.ndarray, lon: np.ndarray) -> np.ndarray:
     return np.column_stack(_TO_GRID.transform(np.asarray(lon, float), np.asarray(lat, float)))
 
 
-def to_lat_lon(frame: pd.DataFrame) -> pd.DataFrame:
-    """Latitude and longitude of rows with grid columns ``e`` and ``n``."""
-    lon, lat = _TO_GRID.transform(
-        frame["e"].to_numpy(), frame["n"].to_numpy(), direction="INVERSE"
-    )
-    return pd.DataFrame({"latitude": lat.round(6), "longitude": lon.round(6)}, index=frame.index)
-
-
 def footfall_series(paths: DataPaths) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Read entries and exits by station and year, and each station's latest name and region.
 
@@ -168,8 +159,7 @@ def naptan_rail_points(paths: DataPaths) -> pd.DataFrame:
 
 def _tiploc_crs() -> pd.DataFrame:
     """Read the package's TIPLOC to CRS map (built from CORPUS)."""
-    with resources.files("ortla.models").joinpath("corpus_tiploc_crs.csv").open() as fh:
-        return pd.read_csv(fh, comment="#")
+    return pd.read_csv(CORPUS_TIPLOCS, comment="#", dtype=str)
 
 
 def bus_stops(paths: DataPaths) -> np.ndarray:

@@ -1,4 +1,4 @@
-"""Tests for the neural slot share (case 117's network)."""
+"""Tests for the neural slot share's learned term."""
 
 from __future__ import annotations
 

@@ -19,7 +19,7 @@ bplan_output_path: "outputs/bplan"
 period_matrices_dir: "outputs/loading/tp_period_matrices"
 frequency_elasticity: 0.4
 
-# The adopted model: case 117's settings, held out by corridor at
+# The adopted model's settings, held out by corridor at
 # rmse(log) 0.461 on nine operators' counts. Each is off by default, so
 # leave them out to run the plain model. "national" and "neural" name
 # fitted models that ship with ORTLA.

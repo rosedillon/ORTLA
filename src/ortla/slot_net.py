@@ -1,4 +1,4 @@
-"""A learned term in the slot share: case 117's network, in numpy.
+"""A learned term in the slot share: a small network, in numpy.
 
 :class:`ortla.network_assignment.SlotShareModel` shares a slot's demand
 between its trains by ``exp(log w)``. With a network attached, each
@@ -19,11 +19,11 @@ slot and its run, all read from the timetable:
 
 Features that are the same for every train in a slot shift every weight
 in it alike and cancel in the share; they matter only through the
-network's interactions. Case 117 trained it through the whole model on
-the counts, held out by corridor 0.4727 to 0.4610 and by operator
-0.4816 to 0.4732, every operator better. Its base was case 97: the
-``m3`` timing table and theta 0.06 with case 39's hourly profile
-(``slot_share_profile``), so use it on that base.
+network's interactions. It was trained through the whole model on the
+counts: held out by corridor 0.4727 to 0.4610 and by operator 0.4816
+to 0.4732, every operator better. Its base was the ``m3`` timing table
+and theta 0.06 with the hourly profile (``slot_share_profile``), so use
+it on that base.
 
 Stations the model's table does not hold (one opened after 2024-25, say)
 take the median entries and exits and count as neither towards nor away

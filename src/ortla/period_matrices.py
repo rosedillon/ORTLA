@@ -706,7 +706,7 @@ def run_loading(config: LoadingConfig) -> None:
     # because staleness looked only at the ODM. Sunbury,
     # Poulton-le-Fylde, Sandy and 17 more served stations kept no route,
     # so every pair touching them was written as zero demand in every
-    # period matrix (case 20). The cache is now stale when any of its
+    # period matrix. The cache is now stale when any of its
     # inputs is newer than it, or when the settings the classification
     # reads (route-type bands, distance, NLC references) differ from the
     # ones in the ``.key`` file beside it; a changed band would

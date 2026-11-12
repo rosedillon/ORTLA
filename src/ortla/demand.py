@@ -76,6 +76,7 @@ if TYPE_CHECKING:
         RouteTypeConfig,
         ServiceStop,
     )
+    from ortla.direction_split import DirectionSplitModel
 
 logger = logging.getLogger(__name__)
 
@@ -1004,7 +1005,7 @@ def calibrated_leg(
     cell is shared equally over the trains after (label
     ``observed_share``), as the national assignment shares it. Without
     this the strip removes the train but not its passengers, and the
-    pivot hands it ``cell / (n - 1)`` instead of ``cell / n`` (case 20).
+    pivot hands it ``cell / (n - 1)`` instead of ``cell / n``.
     Generated demand cannot be told apart from the cell and is reported
     as zero.
 
@@ -1024,14 +1025,14 @@ def calibrated_leg(
     ``synthetic`` (the served-pair prediction, a smeared mean),
     ``median`` (that prediction divided by the smearing factor) or
     ``none``. Taking the larger of an observed figure and a noisy
-    estimate selects the estimate's upward errors: on case 20's served
-    pairs the smeared floor won 77% of the time at a median 2.95x the
+    estimate selects the estimate's upward errors: on the hindcasts'
+    served pairs the smeared floor won 77% of the time at a median 2.95x the
     cell.
 
     ``new_link_uplift`` is the log growth of a pair's whole market when
     it gains a direct link of at least ``new_link_min_trains`` trains a
-    day (case 24: 0.28 from pairs losing one, 0.45 from pairs gaining
-    one; a token service of 1-3 a day moved demand 0-8%). It is scaled
+    day (on the ODM, 2018-19 to 2024-25: 0.28 from pairs losing one,
+    0.45 from pairs gaining one; a token service of 1-3 a day moved demand 0-8%). It is scaled
     by the direct share, and the growth rides the new trains as
     generated demand; the share moved off the old route is abstracted.
     ``step_share`` is the part of the base that is the pair's own
@@ -1092,7 +1093,7 @@ def calibrated_leg(
             # When the floor binds, its trips beyond the time share come off
             # the pair's existing demand first; only what exceeds the whole
             # base is new to rail. Otherwise a slow train, whose share
-            # collapses, books the floor as generated (case 195, R2).
+            # collapses, books the floor as generated.
             old = new - max(growth, new - gross)
             label = "gravity_new_link"
         elif synthetic is None:
@@ -1352,6 +1353,60 @@ def transfer_demand(
     )
 
 
+@dataclasses.dataclass
+class _Run:
+    """What every leg of one candidate's demand prediction shares."""
+
+    config: ProposeConfig
+    candidate: CandidateService
+    gravity: GravityContext | None
+    fares: FaresContext | None
+    added_trains: Callable[[str, str, str, str], int] | None
+    substitution: SubstitutionContext
+    transfers: TransferDemand | None
+    aliases: dict[str, str]
+    direction: DirectionSplitModel | None
+    split_observed: bool
+    split_synthetic: bool
+    footfall: dict[str, float]
+    share_model: SlotShareModel | None
+    candidate_london: bool
+    serves_london: bool
+    coordinates: pd.DataFrame | None
+
+
+@dataclasses.dataclass
+class _Leg:
+    """One ordered pair of the candidate's stops on one running day."""
+
+    day: str
+    period: str
+    i: int
+    j: int
+    origin: str  # the timetable's code
+    destination: str
+    origin_key: str  # the code the demand data holds the station under
+    destination_key: str
+    matrix_path: pathlib.Path
+    services: pd.DataFrame  # the day's existing trains
+
+
+@dataclasses.dataclass
+class _Cell:
+    """A leg's existing demand and the trains it is shared over."""
+
+    cell_trips: float | None  # the ODM's own cell
+    raw_trips: float | None  # the cell less choice changers, plus routed trips
+    trips: float | None  # raw_trips on the leg's direction
+    pair_trips: float  # the pair's demand before choice changers leave it
+    transfer: float
+    lookup: str
+    services: pd.DataFrame  # existing trains on the pair
+    frequency: int  # of them, in the leg's period
+    added_in_period: int
+    share_trains: float | None
+
+
 def predict_demand(
     config: ProposeConfig,
     candidate: CandidateService,
@@ -1397,35 +1452,41 @@ def predict_demand(
         return pd.DataFrame(columns=_DEMAND_COLUMNS)
 
     calls = prepare_calls(calls)
-    aliases = resolve_aliases(config.station_aliases)
-    if substitution is None:
-        substitution = _build_substitution_context(config)
     direction = _direction_split(config)
     split_legs = getattr(config, "direction_split_legs", "observed")
-    split_observed = direction is not None and split_legs in ("observed", "all")
-    split_synthetic = direction is not None and split_legs in ("synthetic", "all")
-    direction_footfall = gravity.footfall if gravity is not None else {}
     stops = candidate.stops
+    ends = (
+        {stops[0].station.strip().upper(), stops[-1].station.strip().upper()} if stops else set()
+    )
+    run = _Run(
+        config=config,
+        candidate=candidate,
+        gravity=gravity,
+        fares=fares,
+        added_trains=added_trains,
+        substitution=substitution or _build_substitution_context(config),
+        transfers=transfers,
+        aliases=resolve_aliases(config.station_aliases),
+        direction=direction,
+        split_observed=direction is not None and split_legs in ("observed", "all"),
+        split_synthetic=direction is not None and split_legs in ("synthetic", "all"),
+        footfall=gravity.footfall if gravity is not None else {},
+        share_model=_slot_share_model(config),
+        candidate_london=bool(stops) and stops[-1].station.strip().upper() in LONDON_TERMINALS,
+        serves_london=bool(ends & LONDON_TERMINALS),
+        coordinates=(
+            station_coordinates(config) if getattr(config, "direct_detour_limit", True) else None
+        ),
+    )
     shortest = shortest_legs(stops)
-    share_model = _slot_share_model(config)
-    candidate_london = bool(stops) and stops[-1].station.strip().upper() in LONDON_TERMINALS
-    serves_london = bool(stops) and bool(
-        {stops[0].station.strip().upper(), stops[-1].station.strip().upper()} & LONDON_TERMINALS
-    )
-    coordinates = (
-        station_coordinates(config) if getattr(config, "direct_detour_limit", True) else None
-    )
     rows = []
-
     for day in candidate.days_of_week:
-        filtered = day_services(calls, reference_date, day)
-
+        services = day_services(calls, reference_date, day)
         for i in range(len(stops)):
             time_i = stop_time(stops[i])
             if time_i is None:
                 continue
             period = classify_time_period(f"{time_i}:00", config.time_periods_cutoffs)
-
             for j in range(i + 1, len(stops)):
                 # Reported against the timetable's own codes so a leg
                 # still matches the operator's loading data; looked up
@@ -1435,324 +1496,335 @@ def predict_demand(
                 destination = stops[j].station.strip().upper()
                 if shortest.get((origin, destination)) != (i, j):
                     continue  # the same station, or a pair a shorter leg of this train serves
-                origin_key = canonical_crs(origin, aliases)
-                destination_key = canonical_crs(destination, aliases)
-
-                matrix_path = period_matrix_path(config.period_matrices_dir, day, period)
-                existing_trips, lookup = matrix_cell(matrix_path, origin_key, destination_key)
-                # Journeys that change trains ride this leg as well;
-                # they join the cell before the slot's demand is shared
-                # over its trains.
-                transfer = (
-                    transfers.trips(day, period, origin_key, destination_key, serves_london)
-                    if transfers is not None and existing_trips is not None
-                    else 0.0
+                leg = _Leg(
+                    day=day,
+                    period=period,
+                    i=i,
+                    j=j,
+                    origin=origin,
+                    destination=destination,
+                    origin_key=canonical_crs(origin, run.aliases),
+                    destination_key=canonical_crs(destination, run.aliases),
+                    matrix_path=period_matrix_path(config.period_matrices_dir, day, period),
+                    services=services,
                 )
-                # The share of the pair's own journeys that change
-                # trains by choice (case 88; 0 unless
-                # `transfer_choice_theta` is set) leaves its direct
-                # legs.
-                changing = (
-                    transfers.direct_share(day, period, origin_key, destination_key)
-                    if transfers is not None and existing_trips is not None
-                    else 0.0
-                )
-                added_in_period = (
-                    max(1, added_trains(day, period, origin, destination)) if added_trains else 1
-                )
-
-                existing_od = od_services(
-                    filtered, origin, destination, config.time_periods_cutoffs
-                )
-                # The detour limit on direct legs: a leg far slower than
-                # the straight line allows (the long way round a loop)
-                # takes no share where its slot has a leg within the
-                # limit.
-                limit = None
-                if coordinates is not None:
-                    km = _pair_km(coordinates, origin, destination)
-                    if np.isfinite(km):
-                        limit = float(
-                            detour_limit(
-                                km,
-                                config.transfer_detour_base_minutes,
-                                config.transfer_detour_minutes_per_km,
-                            )
-                        )
-                if limit is not None:
-                    minutes = _candidate_leg_minutes(stops[i], stops[j])
-                    candidate_slow = minutes is not None and minutes > limit
-                    existing_od, existing_fast = _drop_slow_listings(
-                        existing_od, limit, period, candidate_fast=not candidate_slow
-                    )
-                    if candidate_slow and existing_fast:
-                        continue
-                existing_frequency = (
-                    int((existing_od["time_period"] == period).sum())
-                    if not existing_od.empty
-                    else 0
-                )
-                # Trains the slot's demand is shared over, weighted by
-                # the share model.
-                share_trains = (
-                    _share_trains(
-                        share_model,
-                        existing_od,
-                        period,
-                        stops,
-                        i,
-                        j,
-                        candidate_london,
-                        added_in_period,
-                        aliases,
-                        filtered,
-                        station_coordinates(config),
-                    )
-                    if share_model is not None and existing_frequency > 0
-                    else None
-                )
-
-                # The ODM's own cell: destination substitution compares
-                # it with the other cells of its group, which are raw
-                # ODM cells too (see below).
-                cell_trips = existing_trips
-                # The leg's demand before any direction split, transfers
-                # included.
-                raw_trips = (
-                    existing_trips * (1.0 - changing) + transfer
-                    if existing_trips is not None
-                    else None
-                )
-                existing_trips = raw_trips
-                direction_factor = 1.0
-                # The ODM is exactly direction-symmetric, so without
-                # this the pair's two directions hold identical slot
-                # demand and the only directional signal left is the
-                # frequency divisor below, which points the wrong way.
-                # Redistribute the pair's combined demand between its
-                # directions instead; the total is conserved.
-                if split_observed and existing_trips:
-                    reverse_od = od_services(
-                        filtered, destination, origin, config.time_periods_cutoffs
-                    )
-                    if limit is not None:
-                        reverse_od, _ = _drop_slow_listings(
-                            reverse_od, limit, period, candidate_fast=False
-                        )
-                    reverse_frequency = (
-                        int((reverse_od["time_period"] == period).sum())
-                        if not reverse_od.empty
-                        else 0
-                    )
-                    reverse_trips, _ = matrix_cell(matrix_path, destination_key, origin_key)
-                    # The split reflects service provision *after* the
-                    # change.
-                    forward_after, reverse_after = _trains_after(
-                        existing_od,
-                        candidate.name,
-                        existing_frequency,
-                        reverse_frequency,
-                        added_in_period,
-                        added_trains(day, period, destination, origin) if added_trains else 0,
-                    )
-                    # The factor comes from the pair's own cells and
-                    # scales the transfer trips too, as the national
-                    # assignment applies it. A pair whose only demand is
-                    # routed trips takes the symmetric factor.
-                    forward_cell, reverse_cell = (
-                        (cell_trips, reverse_trips or 0.0) if cell_trips else (1.0, 1.0)
-                    )
-                    factor = (
-                        direction.split(
-                            forward_cell,
-                            reverse_cell,
-                            period,
-                            direction_footfall.get(origin_key),
-                            direction_footfall.get(destination_key),
-                            forward_after,
-                            reverse_after,
-                            origin=origin_key,
-                            destination=destination_key,
-                        )
-                        / forward_cell
-                    )
-                    existing_trips = raw_trips * factor
-                    direction_factor = factor
-                # The pair's demand before choice changers leave it. They
-                # are computed with the candidate in the timetable, so a
-                # slow candidate can send nearly all of them off and leave
-                # a pair with real demand looking empty (case 196).
-                pair_trips = ((cell_trips or 0.0) + transfer) * direction_factor
-
-                generated = None
-                # A hindcast whose matrix saw the stripped trains
-                # running: an observed cell is already the demand after
-                # the change.
-                cell_is_after = getattr(config, "matrix_includes_stripped", False)
-                if (
-                    config.demand_model == "calibrated"
-                    and gravity is not None
-                    and gravity.model is not None
-                    and cell_is_after
-                    and existing_trips
-                    and existing_trips > 0
-                ):
-                    # Substitution is a response the cell already holds,
-                    # so it is not looked up.
-                    captured, generated, model_used = calibrated_leg(
-                        gravity,
-                        stops[i],
-                        stops[j],
-                        day,
-                        period,
-                        existing_trips=existing_trips,
-                        trains_in_period=existing_frequency,
-                        trains_per_day=len(existing_od),
-                        added_in_period=added_in_period,
-                        added_per_day=1,
-                        cell_is_after=True,
-                        share_trains=share_trains,
-                    )
-                elif (
-                    config.demand_model == "calibrated"
-                    and gravity is not None
-                    and gravity.model is not None
-                ):
-                    # Substitution reads the other destinations' raw
-                    # cells, so it must see this pair's raw cell too:
-                    # handed the split figure (up to twice the cell) it
-                    # can find a destination holding more than its whole
-                    # group, and the pivot logit then divides by nearly
-                    # zero (Colchester -> Liverpool Street came out 52
-                    # times too big). Its result is put on the leg's
-                    # direction afterwards by the same factor the split
-                    # applied to the cell.
-                    choice = substitution.terms(
-                        matrix_path,
-                        filtered,
-                        origin_key,
-                        destination_key,
-                        cell_trips or 0.0,
-                        _candidate_leg_minutes(stops[i], stops[j]),
-                        timetable_origin=origin,
-                        timetable_destination=destination,
-                    )
-                    # Routed trips are riding this leg on the way
-                    # somewhere else, so no other destination competes
-                    # for them: they join the substituted base as they
-                    # are.
-                    if transfer and choice.substituted_trips is not None:
-                        choice = dataclasses.replace(
-                            choice, substituted_trips=choice.substituted_trips + transfer
-                        )
-                    choice = _on_split_direction(choice, raw_trips, existing_trips)
-                    added_per_day = (
-                        max(1, added_trains(day, "day", origin, destination))
-                        if added_trains
-                        else 1
-                    )
-                    captured, generated, model_used = calibrated_leg(
-                        gravity,
-                        stops[i],
-                        stops[j],
-                        day,
-                        period,
-                        existing_trips=existing_trips or 0.0,
-                        pair_trips=pair_trips,
-                        trains_in_period=existing_frequency,
-                        trains_per_day=len(existing_od),
-                        added_in_period=added_in_period,
-                        added_per_day=added_per_day,
-                        choice=choice,
-                        apply_dilution=config.apply_frequency_dilution,
-                        pivot_elasticity=config.served_pair_frequency_elasticity,
-                        new_link_floor=config.new_link_floor,
-                        share_trains=share_trains,
-                        new_link_uplift=config.new_link_uplift,
-                        new_link_min_trains=config.new_link_min_trains,
-                        step_share=(cell_trips or 0.0) / raw_trips if raw_trips else 1.0,
-                    )
-                    if split_synthetic and captured and model_used == "gravity_synthetic":
-                        factor = _synthetic_split_factor(
-                            direction,
-                            gravity,
-                            filtered,
-                            stops[i],
-                            stops[j],
-                            day,
-                            period,
-                            config.time_periods_cutoffs,
-                            origin_key=origin_key,
-                            destination_key=destination_key,
-                            trains_forward=existing_frequency + added_in_period,
-                            trains_per_day=len(existing_od) + added_per_day,
-                            added_trains=added_trains,
-                            footfall_origin=(
-                                stops[i].estimated_annual_footfall
-                                or direction_footfall.get(origin_key)
-                            ),
-                            footfall_destination=(
-                                stops[j].estimated_annual_footfall
-                                or direction_footfall.get(destination_key)
-                            ),
-                        )
-                        captured *= factor
-                        generated = generated * factor if generated is not None else None
-                elif existing_trips and existing_trips > 0 and cell_is_after:
-                    shared_over = share_trains or existing_frequency + added_in_period
-                    captured = existing_trips / shared_over
-                    generated = 0.0
-                    model_used = "observed_share"
-                elif existing_trips and existing_trips > 0 and existing_frequency > 0:
-                    new_frequency = existing_frequency + added_in_period
-                    new_total = (
-                        existing_trips
-                        * (new_frequency / existing_frequency) ** config.frequency_elasticity
-                    )
-                    captured = new_total / (share_trains or new_frequency)
-                    # Most captured trips move off existing trains; only
-                    # the growth in the slot's total is new to rail.
-                    generated = (new_total - existing_trips) / added_in_period
-                    model_used = "pivot"
-                elif gravity is not None:
-                    captured, _band = gravity.predict(stops[i], stops[j], day, period)
-                    if captured is not None:
-                        captured /= added_in_period
-                        generated = captured
-                    model_used = "gravity" if captured is not None else "insufficient_data"
-                else:
-                    captured = None
-                    model_used = "insufficient_data"
-
-                fare = fares.fare(origin_key, destination_key) if fares else None
-                revenue = (
-                    round(captured * fare, 2)
-                    if captured is not None and fare is not None
-                    else None
-                )
-
-                rows.append(
-                    {
-                        "candidate_name": candidate.name,
-                        "day": day,
-                        "period": period,
-                        "from_station": origin,
-                        "to_station": destination,
-                        "leg_stop_i": i,
-                        "leg_stop_j": j,
-                        "existing_annual_trips": existing_trips,
-                        "existing_transfer_trips": transfer,
-                        "existing_demand_lookup": lookup,
-                        "existing_frequency": existing_frequency,
-                        "predicted_annual_trips_captured": captured,
-                        "predicted_annual_trips_generated": generated,
-                        "demand_model_used": model_used,
-                        "average_fare_gbp": fare,
-                        "predicted_annual_revenue_gbp": revenue,
-                    }
-                )
-
+                row = _predict_leg(run, leg)
+                if row is not None:
+                    rows.append(row)
     return pd.DataFrame(rows, columns=_DEMAND_COLUMNS)
+
+
+def _predict_leg(run: _Run, leg: _Leg) -> dict | None:
+    """Predict one leg's captured and generated trips; None where a faster train serves it."""
+    cell = _existing_cell(run, leg)
+    if cell is None:
+        return None
+    captured, generated, model_used = _capture(run, leg, cell)
+    fare = run.fares.fare(leg.origin_key, leg.destination_key) if run.fares else None
+    revenue = round(captured * fare, 2) if captured is not None and fare is not None else None
+    return {
+        "candidate_name": run.candidate.name,
+        "day": leg.day,
+        "period": leg.period,
+        "from_station": leg.origin,
+        "to_station": leg.destination,
+        "leg_stop_i": leg.i,
+        "leg_stop_j": leg.j,
+        "existing_annual_trips": cell.trips,
+        "existing_transfer_trips": cell.transfer,
+        "existing_demand_lookup": cell.lookup,
+        "existing_frequency": cell.frequency,
+        "predicted_annual_trips_captured": captured,
+        "predicted_annual_trips_generated": generated,
+        "demand_model_used": model_used,
+        "average_fare_gbp": fare,
+        "predicted_annual_revenue_gbp": revenue,
+    }
+
+
+def _existing_cell(run: _Run, leg: _Leg) -> _Cell | None:
+    """Read the leg's existing demand and trains; None if the candidate is too slow to count."""
+    config, transfers, stops = run.config, run.transfers, run.candidate.stops
+    existing_trips, lookup = matrix_cell(leg.matrix_path, leg.origin_key, leg.destination_key)
+    # Journeys that change trains ride this leg as well; they join the
+    # cell before the slot's demand is shared over its trains.
+    transfer = (
+        transfers.trips(
+            leg.day, leg.period, leg.origin_key, leg.destination_key, run.serves_london
+        )
+        if transfers is not None and existing_trips is not None
+        else 0.0
+    )
+    # The share of the pair's own journeys that change trains by choice
+    # (0 unless `transfer_choice_theta` is set) leaves its direct legs.
+    changing = (
+        transfers.direct_share(leg.day, leg.period, leg.origin_key, leg.destination_key)
+        if transfers is not None and existing_trips is not None
+        else 0.0
+    )
+    added_in_period = (
+        max(1, run.added_trains(leg.day, leg.period, leg.origin, leg.destination))
+        if run.added_trains
+        else 1
+    )
+    existing_od = od_services(
+        leg.services, leg.origin, leg.destination, config.time_periods_cutoffs
+    )
+    # The detour limit on direct legs: a leg far slower than the straight
+    # line allows (the long way round a loop) takes no share where its
+    # slot has a leg within the limit.
+    limit = None
+    if run.coordinates is not None:
+        km = _pair_km(run.coordinates, leg.origin, leg.destination)
+        if np.isfinite(km):
+            limit = float(
+                detour_limit(
+                    km, config.transfer_detour_base_minutes, config.transfer_detour_minutes_per_km
+                )
+            )
+    if limit is not None:
+        minutes = _candidate_leg_minutes(stops[leg.i], stops[leg.j])
+        candidate_slow = minutes is not None and minutes > limit
+        existing_od, existing_fast = _drop_slow_listings(
+            existing_od, limit, leg.period, candidate_fast=not candidate_slow
+        )
+        if candidate_slow and existing_fast:
+            return None
+    frequency = (
+        int((existing_od["time_period"] == leg.period).sum()) if not existing_od.empty else 0
+    )
+    # Trains the slot's demand is shared over, weighted by the share model.
+    share_trains = (
+        _share_trains(
+            run.share_model,
+            existing_od,
+            leg.period,
+            stops,
+            leg.i,
+            leg.j,
+            run.candidate_london,
+            added_in_period,
+            run.aliases,
+            leg.services,
+            station_coordinates(config),
+        )
+        if run.share_model is not None and frequency > 0
+        else None
+    )
+    # The leg's demand before any direction split, routed trips included.
+    raw_trips = (
+        existing_trips * (1.0 - changing) + transfer if existing_trips is not None else None
+    )
+    trips, direction_factor = raw_trips, 1.0
+    if run.split_observed and raw_trips:
+        direction_factor = _observed_split_factor(
+            run, leg, existing_trips, existing_od, frequency, added_in_period, limit
+        )
+        trips = raw_trips * direction_factor
+    return _Cell(
+        cell_trips=existing_trips,
+        raw_trips=raw_trips,
+        trips=trips,
+        # The pair's demand before choice changers leave it. They are
+        # computed with the candidate in the timetable, so a slow candidate
+        # can send nearly all of them off and leave a pair with real demand
+        # looking empty.
+        pair_trips=((existing_trips or 0.0) + transfer) * direction_factor,
+        transfer=transfer,
+        lookup=lookup,
+        services=existing_od,
+        frequency=frequency,
+        added_in_period=added_in_period,
+        share_trains=share_trains,
+    )
+
+
+def _observed_split_factor(
+    run: _Run,
+    leg: _Leg,
+    cell_trips: float | None,
+    existing_od: pd.DataFrame,
+    frequency: int,
+    added_in_period: int,
+    limit: float | None,
+) -> float:
+    """Put the pair's combined demand on the leg's direction; the total is conserved.
+
+    The ODM is exactly direction-symmetric, so without this the pair's two directions hold
+    identical slot demand and the only directional signal left is the frequency divisor,
+    which points the wrong way.
+    """
+    config = run.config
+    reverse_od = od_services(
+        leg.services, leg.destination, leg.origin, config.time_periods_cutoffs
+    )
+    if limit is not None:
+        reverse_od, _ = _drop_slow_listings(reverse_od, limit, leg.period, candidate_fast=False)
+    reverse_frequency = (
+        int((reverse_od["time_period"] == leg.period).sum()) if not reverse_od.empty else 0
+    )
+    reverse_trips, _ = matrix_cell(leg.matrix_path, leg.destination_key, leg.origin_key)
+    # The split reflects service provision *after* the change.
+    forward_after, reverse_after = _trains_after(
+        existing_od,
+        run.candidate.name,
+        frequency,
+        reverse_frequency,
+        added_in_period,
+        run.added_trains(leg.day, leg.period, leg.destination, leg.origin)
+        if run.added_trains
+        else 0,
+    )
+    # The factor comes from the pair's own cells and scales the transfer
+    # trips too, as the national assignment applies it. A pair whose only
+    # demand is routed trips takes the symmetric factor.
+    forward_cell, reverse_cell = (cell_trips, reverse_trips or 0.0) if cell_trips else (1.0, 1.0)
+    return (
+        run.direction.split(
+            forward_cell,
+            reverse_cell,
+            leg.period,
+            run.footfall.get(leg.origin_key),
+            run.footfall.get(leg.destination_key),
+            forward_after,
+            reverse_after,
+            origin=leg.origin_key,
+            destination=leg.destination_key,
+        )
+        / forward_cell
+    )
+
+
+def _capture(run: _Run, leg: _Leg, cell: _Cell) -> tuple[float | None, float | None, str]:
+    """Return the trips the candidate captures and generates on a leg, and the model used."""
+    config, gravity, stops = run.config, run.gravity, run.candidate.stops
+    origin_stop, destination_stop = stops[leg.i], stops[leg.j]
+    trips = cell.trips
+    calibrated = (
+        config.demand_model == "calibrated" and gravity is not None and gravity.model is not None
+    )
+    # A hindcast whose matrix saw the stripped trains running: an observed
+    # cell is already the demand after the change.
+    cell_is_after = getattr(config, "matrix_includes_stripped", False)
+    if calibrated and cell_is_after and trips and trips > 0:
+        # Substitution is a response the cell already holds, so it is not
+        # looked up.
+        return calibrated_leg(
+            gravity,
+            origin_stop,
+            destination_stop,
+            leg.day,
+            leg.period,
+            existing_trips=trips,
+            trains_in_period=cell.frequency,
+            trains_per_day=len(cell.services),
+            added_in_period=cell.added_in_period,
+            added_per_day=1,
+            cell_is_after=True,
+            share_trains=cell.share_trains,
+        )
+    if calibrated:
+        return _calibrated_capture(run, leg, cell)
+    if trips and trips > 0 and cell_is_after:
+        shared_over = cell.share_trains or cell.frequency + cell.added_in_period
+        return trips / shared_over, 0.0, "observed_share"
+    if trips and trips > 0 and cell.frequency > 0:
+        new_frequency = cell.frequency + cell.added_in_period
+        new_total = trips * (new_frequency / cell.frequency) ** config.frequency_elasticity
+        # Most captured trips move off existing trains; only the growth in
+        # the slot's total is new to rail.
+        generated = (new_total - trips) / cell.added_in_period
+        return new_total / (cell.share_trains or new_frequency), generated, "pivot"
+    captured = None
+    if gravity is not None:
+        captured, _band = gravity.predict(origin_stop, destination_stop, leg.day, leg.period)
+    if captured is None:
+        return None, None, "insufficient_data"
+    captured /= cell.added_in_period
+    return captured, captured, "gravity"
+
+
+def _calibrated_capture(
+    run: _Run, leg: _Leg, cell: _Cell
+) -> tuple[float | None, float | None, str]:
+    """Price a leg with the calibrated model: substitution, pivot or gravity, then the split."""
+    config, gravity, stops = run.config, run.gravity, run.candidate.stops
+    # Substitution reads the other destinations' raw cells, so it must see
+    # this pair's raw cell too: handed the split figure (up to twice the
+    # cell) it can find a destination holding more than its whole group,
+    # and the pivot logit then divides by nearly zero (Colchester ->
+    # Liverpool Street came out 52 times too big). Its result is put on
+    # the leg's direction afterwards by the same factor the split applied
+    # to the cell.
+    choice = run.substitution.terms(
+        leg.matrix_path,
+        leg.services,
+        leg.origin_key,
+        leg.destination_key,
+        cell.cell_trips or 0.0,
+        _candidate_leg_minutes(stops[leg.i], stops[leg.j]),
+        timetable_origin=leg.origin,
+        timetable_destination=leg.destination,
+    )
+    # Routed trips are riding this leg on the way somewhere else, so no
+    # other destination competes for them: they join the substituted base
+    # as they are.
+    if cell.transfer and choice.substituted_trips is not None:
+        choice = dataclasses.replace(
+            choice, substituted_trips=choice.substituted_trips + cell.transfer
+        )
+    choice = _on_split_direction(choice, cell.raw_trips, cell.trips)
+    added_per_day = (
+        max(1, run.added_trains(leg.day, "day", leg.origin, leg.destination))
+        if run.added_trains
+        else 1
+    )
+    captured, generated, model_used = calibrated_leg(
+        gravity,
+        stops[leg.i],
+        stops[leg.j],
+        leg.day,
+        leg.period,
+        existing_trips=cell.trips or 0.0,
+        pair_trips=cell.pair_trips,
+        trains_in_period=cell.frequency,
+        trains_per_day=len(cell.services),
+        added_in_period=cell.added_in_period,
+        added_per_day=added_per_day,
+        choice=choice,
+        apply_dilution=config.apply_frequency_dilution,
+        pivot_elasticity=config.served_pair_frequency_elasticity,
+        new_link_floor=config.new_link_floor,
+        share_trains=cell.share_trains,
+        new_link_uplift=config.new_link_uplift,
+        new_link_min_trains=config.new_link_min_trains,
+        step_share=(cell.cell_trips or 0.0) / cell.raw_trips if cell.raw_trips else 1.0,
+    )
+    if run.split_synthetic and captured and model_used == "gravity_synthetic":
+        factor = _synthetic_split_factor(
+            run.direction,
+            gravity,
+            leg.services,
+            stops[leg.i],
+            stops[leg.j],
+            leg.day,
+            leg.period,
+            config.time_periods_cutoffs,
+            origin_key=leg.origin_key,
+            destination_key=leg.destination_key,
+            trains_forward=cell.frequency + cell.added_in_period,
+            trains_per_day=len(cell.services) + added_per_day,
+            added_trains=run.added_trains,
+            footfall_origin=(
+                stops[leg.i].estimated_annual_footfall or run.footfall.get(leg.origin_key)
+            ),
+            footfall_destination=(
+                stops[leg.j].estimated_annual_footfall or run.footfall.get(leg.destination_key)
+            ),
+        )
+        captured *= factor
+        generated = generated * factor if generated is not None else None
+    return captured, generated, model_used
 
 
 _LOADING_COLUMNS = [

@@ -15,7 +15,7 @@ table_1410: "/path/to/datasources/table-1410-passenger-entries-and-exits-and-int
 tag_databook_path: "/path/to/datasources/TAG-data-book.xlsm"
 fares_dir: "outputs/fares"
 
-# The adopted model: case 117's settings, held out by corridor at
+# The adopted model's settings, held out by corridor at
 # rmse(log) 0.461 on nine operators' counts. Each is off by default, so
 # leave them out to run the plain model. "national" and "neural" name
 # fitted models that ship with ORTLA.

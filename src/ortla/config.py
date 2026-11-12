@@ -50,7 +50,7 @@ from ortla.clock import (
 )
 
 
-# # # SETTINGS MODELS # # #
+# Settings models
 class StationsConfig(ctk.BaseConfig):
     """Location and column names of the station coordinates dataset."""
 
@@ -155,7 +155,7 @@ class StationPairMixin(ctk.BaseConfig):
         return [(self.origin.strip().upper(), self.destination.strip().upper())]
 
 
-# # # RUNNABLE MODELS # # #
+# Runnable models
 class BaseRunConfig(ctk.BaseConfig, abc.ABC):
     """Base class for a runnable command configuration."""
 
@@ -196,9 +196,6 @@ class MatrixConfig(BaseRunConfig):
     # keeps every station (national).
     valid_stations: pathlib.Path | None = None
     chunk_size: int = 500_000
-    keep_columns: list[str] = pydantic.Field(
-        default_factory=lambda: ["origin_tlc", "destination_tlc", "journeys"]
-    )
     fill_value: str = "!"
 
     def run(self) -> None:
@@ -265,8 +262,8 @@ class LoadingConfig(BaseRunConfig):
     # When set, each weekday's period matrices move every pair's split
     # over periods and directions towards it by od_profile_strength, the
     # profile smoothed by od_profile_smoothing trips towards ours; pair
-    # day totals are kept (ortla.od_profile). Case 37:
-    # strength 0.5, smoothing 10 took rmse(log) from 0.562 to 0.532
+    # day totals are kept (ortla.od_profile). Strength 0.5 and
+    # smoothing 10 took rmse(log) from 0.562 to 0.532
     # (held out by corridor 0.558 to 0.519), with the direction split
     # left on. None leaves the matrices unchanged.
     od_profile_path: pathlib.Path | None = None
@@ -332,8 +329,8 @@ class LoadingConfig(BaseRunConfig):
     # What the temporal factors are grouped by. "distance" uses
     # ``journey_type_column``'s distance band; "origin_station" gives
     # each origin with at least ``journey_type_min_rows`` rows its own
-    # profile and falls back to the distance band elsewhere. Case 06
-    # measured the three distance bands removing 1% of the variation
+    # profile and falls back to the distance band elsewhere. On nine
+    # operators' counts the three distance bands remove 1% of the variation
     # between corridors' real time-of-day profiles (98.7% of it is
     # within band), against 30% for the origin station, so distance
     # explains almost none of it.
@@ -749,7 +746,7 @@ class ProposeConfig(BaseRunConfig):
     # Exponent of the pivot on a pair that already has direct trains,
     # (f_after / f_before) ** e, in place of the cross-sectional b4
     # (about 0.62). On held-out ODM spans b4 was the worst choice in
-    # every span and 0 to 0.1 the best (case 53, posthoc_grid). 0.1
+    # every span and 0 to 0.1 the best. 0.1
     # allows for the noise in archive timetables, which biases the
     # within-pair estimate down. The synthetic prediction for an
     # unserved pair keeps b4. None = b4 (runs before 2026-10-26).
@@ -780,19 +777,19 @@ class ProposeConfig(BaseRunConfig):
     transfer_detour_minutes_per_km: float = 2.0
     # "period": route each period on its own trains, so a pair with
     # direct trains in some periods still changes trains in the others
-    # (case 17's T1, adopted again in case 23). "day": the original
+    # (better held out by corridor). "day": the original
     # rule, a change only for pairs no train links all day; set it to
     # reproduce runs before 2026-10-01.
     transfer_routing: Literal["period", "day"] = "period"
     # Multiply the routed one-change trips; `transfer_scale_london`
     # replaces `transfer_scale` on trains that start or end at a London
-    # terminal. Case 33 fitted 2.30 and 1.20 together with a
+    # terminal. 2.30 and 1.20 were fitted together with a
     # slot_share_model of theta 0.06 (in
     # the packaged slot_share_model "m3"), so use the three
     # together. 1.0 and None reproduce runs before 2026-10-25.
     transfer_scale: float = 1.0
     transfer_scale_london: float | None = None
-    # Case 88: pairs with a direct train also change trains by choice, a
+    # Pairs with a direct train also change trains by choice, a
     # share 1 / (1 + exp(theta x (change minutes - direct minutes)))
     # moving from the direct legs to the best change's two legs (minutes
     # include half the headway and the change penalty). 0.2 took
@@ -806,7 +803,7 @@ class ProposeConfig(BaseRunConfig):
     # Hold direct legs to the same detour limit: a leg slower than it
     # (the long way round a loop) carries nothing where its slot has a
     # leg within it, and is not counted among the slot's trains. Needs
-    # `distance.stations`. Case 19 (addendum L2). Used by `hindcast` and
+    # `distance.stations`. Used by `hindcast` and
     # `propose`.
     direct_detour_limit: bool = True
     # Destination sets that compete for the same trips, so a new direct
@@ -833,18 +830,18 @@ class ProposeConfig(BaseRunConfig):
     # and this. One of "synthetic" (the served-pair gravity prediction,
     # a smeared mean), "median" (that divided by the smearing factor) or
     # "none". The larger of an observed figure and a noisy estimate
-    # selects the estimate's upward errors: on case 20's served pairs
+    # selects the estimate's upward errors: on hindcast served pairs
     # the smeared floor won 77% of the time at a median 2.95x the
     # observed cell, where "median" gave 1.01x. "median" since
-    # 2026-10-01 (case 20 addendum); it also edged "synthetic" on the
+    # 2026-10-01; it also edged "synthetic" on the
     # clean hindcasts 02 and 03. Set "synthetic" to reproduce earlier
     # runs.
     new_link_floor: Literal["synthetic", "median", "none"] = "median"
     # Log growth of a pair's market when it gains a direct link of at
     # least `new_link_min_trains` a day, scaled by the share the direct
-    # route wins and counted as generated. Case 24 (ODM 2018-19 to
-    # 2024-25, pairs gaining or losing a direct link, station x year
-    # effects): 0.28 from losses (the conservative arm), 0.45 from
+    # route wins and counted as generated. Fitted on the ODM, 2018-19 to
+    # 2024-25, on pairs gaining or losing a direct link with station x
+    # year effects: 0.28 from losses (the conservative arm), 0.45 from
     # gains; 1-3 trains a day moved demand 0-8%. 0 reproduces runs
     # before 2026-10-01, where a new link generated nothing.
     new_link_uplift: float = 0.28
@@ -881,9 +878,9 @@ class ProposeConfig(BaseRunConfig):
     # `slot_share_model.json`,
     # ortla.network_assignment.SlotShareModel): by departure
     # half-hour and in-train minutes, so a fast train takes more of a
-    # slot than a stopper. Case 23. The packaged models can be named
-    # instead of a path: "m3" (cases 23 and 33, theta 0.06) or "neural"
-    # (m3 with case 117's network on each train's place in its slot and
+    # slot than a stopper. The packaged models can be named
+    # instead of a path: "m3" (theta 0.06) or "neural"
+    # (m3 with a small network on each train's place in its slot and
     # run; fitted with slot_share_profile on, so set that too). None
     # shares every slot equally over its trains.
     slot_share_model: pathlib.Path | None = None
@@ -891,7 +888,7 @@ class ProposeConfig(BaseRunConfig):
     # LoadingConfig.od_profile_path). When set with slot_share_model, a
     # train also takes more of its slot the more of its pair's profile
     # demand starts in the hour it leaves (SlotShareModel.with_profile).
-    # Case 39, on top of the od_profile matrices: rmse(log) 0.532 to
+    # On top of the od_profile matrices: rmse(log) 0.532 to
     # 0.526, held out by corridor 0.519 to 0.511.
     slot_share_profile: pathlib.Path | None = None
     slot_share_profile_strength: float = 0.75
@@ -911,9 +908,9 @@ class ProposeConfig(BaseRunConfig):
     # counts each product once; passengers lean on seasons, railcards
     # and off-peak tickets. Weighted by 2024-25 ODM journeys the median
     # averages GBP 13.34 a journey; ORR's fares income is GBP 11.5bn
-    # over the ODM's 1.53bn journeys, GBP 7.50 (case 26). Simplification: one
-    # national factor; a long-distance/commuter split if the cases need
-    # it.
+    # over the ODM's 1.53bn journeys, GBP 7.50. Simplification: one
+    # national factor; split it into long-distance and commuter if a
+    # forecast needs it.
     fare_yield_factor: float = 0.56
     # Reference weekday and date, as in the `timetable` and `services`
     # commands; they pick the timetable snapshot the headway check runs
@@ -1267,14 +1264,13 @@ class HindcastConfig(ProposeConfig):
     # True to reproduce `propose`'s forecasting treatment.
     apply_frequency_dilution: bool = False
     # Whether the period matrices were observed with the stripped trains
-    # running (an in-sample matrix, as in cases 06, 16 and 20) rather
-    # than before them (cases 01-05). When true, an observed cell is
+    # running (an in-sample matrix) rather than before them. When true, an observed cell is
     # already the demand after the change, so each train takes an equal
     # share of it, as in the national assignment. Left false on an
     # in-sample matrix, the strip removes the train but not its
     # passengers: the re-inserted train takes cell / (n - 1) instead of
     # cell / n, and a train that was its slot's only train is priced as
-    # a new link (case 20: +0.20 log pooled).
+    # a new link (+0.20 log pooled over the hindcasts).
     matrix_includes_stripped: bool = False
     # Train-level outturn from loading data, and/or O-D outturn from
     # ODMs.
@@ -1382,13 +1378,13 @@ class NewStationConfig(BaseRunConfig):
     domain_footfall: pathlib.Path
     small_station_threshold: float = 1_500_000
     # Borrow nearby established stations' residuals, weighted exp(-km / borrow_km) and shrunk
-    # by borrow_kappa (cases 107, 160). 0 gives SDFT's forecast alone. The intervals come
+    # by borrow_kappa. 0 gives SDFT's forecast alone. The intervals come
     # from the calibration stations' left-out residuals either way.
     borrow_km: float = 2.0
     borrow_kappa: float = 0.25
     # Network Rail SRAM's stops file (O04 StopsAndPasses, parquet). When given, any station
     # whose daily trains differ from SRAM's by more than x2 is listed and flagged: our
-    # extracts can miss whole schedules (case 205: Darwen 4 trains a day against SRAM's 65).
+    # extracts can miss whole schedules (Darwen: 4 trains a day against SRAM's 65).
     frequency_check: pathlib.Path | None = None
     # Existing stations within this distance of a new one are listed
     # with their catchments without and with it.
@@ -1551,7 +1547,7 @@ class AssignConfig(BaseRunConfig):
         assign.run_assign(self)
 
 
-# # # COMMAND REGISTRY # # #
+# Command registry
 # Every command the tool offers: its name, the config model that drives
 # it and a one-line description. The command line and the desktop app
 # are both built from this, so a new command needs a line here and its

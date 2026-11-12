@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import pathlib
 import sys
 
@@ -35,7 +36,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "src"))
 from ortla import loading_data
 from ortla.config import TimetableEra
 
-DATASOURCES = pathlib.Path("/Volumes/ENGG341/datasources")
+DATASOURCES = pathlib.Path(os.environ.get("ORTLA_DATA", "datasources"))
 OUTPUT = DATASOURCES / "output_paper"
 
 # The published timetables held as CIF, with the dates each was in

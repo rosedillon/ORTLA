@@ -58,9 +58,8 @@ DEFAULT_STATION_ALIASES: dict[str, str] = {
 # soon as it is read: trains at both codes serve the same pairs, so they
 # have to be counted as one station's trains when a slot's demand is
 # shared among them, not only looked up under one code. Found by the
-# national base-year check (case 16), each confirmed by its neighbouring
-# calls; recoding them took held-out rmse(log) from 0.906 to 0.898
-# there.
+# national base-year check, each confirmed by its neighbouring calls;
+# recoding them took held-out rmse(log) from 0.906 to 0.898 there.
 DEFAULT_STATION_RECODES: dict[str, str] = {
     # The Elizabeth line's central calls.
     "WHX": "ZLW",  # Whitechapel
@@ -123,8 +122,7 @@ DEFAULT_DESTINATION_GROUPS: dict[str, list[str]] = {
 }
 
 
-# Terminals whose trains count as London-bound for the timing weights
-# (case 17 common.LONDON).
+# Terminals whose trains count as London-bound for the timing weights.
 LONDON_TERMINALS = frozenset(
     {
         "BFR",

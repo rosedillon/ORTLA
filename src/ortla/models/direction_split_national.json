@@ -27,6 +27,6 @@
   },
   "n_cells": 490537,
   "r_squared": 0.15142987171609412,
-  "source": "case 16 national base-year check, variant codes_transfers: 490537 counted segments of nine operators, May 2026 timetable, weekdays; slopes fitted on segment on-board loads (fix_split_choice.py --save-model)",
+  "source": "national base-year check, with second codes and transfers: 490537 counted segments of nine operators, May 2026 timetable, weekdays; slopes fitted on segment on-board loads (fix_split_choice.py --save-model)",
   "station_function": null
 }

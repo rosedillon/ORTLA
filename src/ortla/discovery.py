@@ -20,7 +20,7 @@ see a small shortlist:
    (:func:`ortla.gravity_model.load_direct_frequency`).
 3. Demand scoring (:func:`_score_observed_market`): each corridor's
    observed market, the trips the period matrices record on it by any
-   route, times the growth a first direct link brings (case 24).
+   route, times the growth a first direct link brings.
 4. Feasibility: a running-time check on the physical network
    (:func:`_running_time_feasible`, via
    :meth:`ortla.bplan_geography.BplanTimingGraph.minimum_running_time`),
@@ -96,9 +96,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-# ----------------------------------------------------------------------
 # Inputs / outputs
-# ----------------------------------------------------------------------
 @dataclass
 class DiscoveryCandidate:
     """One station pair as it moves through the discovery funnel."""
@@ -109,7 +107,7 @@ class DiscoveryCandidate:
     existing_daily_trains: float
     # Both directions, any route, from the period matrices.
     observed_annual_trips: float | None = None
-    # The growth a first direct link adds (case 24's step).
+    # The growth a first direct link adds.
     predicted_annual_trips: float | None = None
     route_type_band: str | None = None
     minimum_running_minutes: float | None = None
@@ -160,9 +158,7 @@ class DiscoveryResult:
         return self.candidates[0] if self.candidates else None
 
 
-# ----------------------------------------------------------------------
 # Stage 1: distance pre-filter
-# ----------------------------------------------------------------------
 def _pairs_within_distance_band(
     calc: TrackDistanceCalculator,
     stations: set[str],
@@ -200,9 +196,7 @@ def _pairs_within_distance_band(
     return pairs
 
 
-# ----------------------------------------------------------------------
 # Stage 2: existing-service filter
-# ----------------------------------------------------------------------
 def _one_code_per_station(
     pairs: list[tuple[str, str, float]],
     frequency: dict[tuple[str, str], float],
@@ -256,9 +250,7 @@ def _drop_well_served_pairs(
     return kept
 
 
-# ----------------------------------------------------------------------
 # Stage 3: demand scoring
-# ----------------------------------------------------------------------
 def _annual_market(matrices_dir: pathlib.Path) -> pd.DataFrame:
     """Annual trips between every two stations, all matrices summed."""
     total: pd.DataFrame | None = None
@@ -284,11 +276,10 @@ def _score_observed_market(
 
     An unserved pair is not an empty market: the ODM records the
     journeys made on it by any route. A first direct link grows that
-    market by ``exp(new_link_uplift) - 1`` (case 24's step, at a direct
-    share of one), so the ranking is the observed market's, and
+    market by ``exp(new_link_uplift) - 1`` (at a direct share of one), so the ranking is the observed market's, and
     ``predicted_annual_trips`` is the growth. Ranking on the gravity
-    model's served-pair prediction instead ranked pairs on station size
-    (case 24). A corridor is scored once, both directions together; a
+    model's served-pair prediction instead ranked pairs on station size.
+    A corridor is scored once, both directions together; a
     pair with no ODM flow, or a station missing from the matrices,
     scores nothing.
     """
@@ -324,9 +315,7 @@ def _score_observed_market(
     ]
 
 
-# ----------------------------------------------------------------------
 # Stage 4: feasibility + candidate synthesis
-# ----------------------------------------------------------------------
 def _running_time_feasible(
     candidates: list[DiscoveryCandidate],
     crs_tiploc: dict[str, str],
@@ -454,9 +443,7 @@ def _synthesize_candidate(dc: DiscoveryCandidate, config: DiscoveryConfig) -> Ca
     )
 
 
-# ----------------------------------------------------------------------
 # Stage 5: full sweep
-# ----------------------------------------------------------------------
 def _promote_and_appraise(
     dc: DiscoveryCandidate,
     config: DiscoveryConfig,
@@ -565,9 +552,7 @@ def _promote(
     return promoted
 
 
-# ----------------------------------------------------------------------
 # Public entry point
-# ----------------------------------------------------------------------
 def generate_discovery_candidates(
     config: DiscoveryConfig,
     tag: TagDataBook,
@@ -716,9 +701,7 @@ def generate_discovery_candidates(
     )
 
 
-# ----------------------------------------------------------------------
 # CLI wrapper
-# ----------------------------------------------------------------------
 _CANDIDATE_COLUMNS = [
     "origin",
     "destination",

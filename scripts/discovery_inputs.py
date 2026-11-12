@@ -62,7 +62,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-DATA = pathlib.Path(os.environ.get("ORM_DATA", "/Volumes/ENGG341/datasources"))
+DATA = pathlib.Path(os.environ.get("ORTLA_DATA", "datasources"))
 PAPER = pathlib.Path(os.environ.get("ORM_OUT", DATA / "output_paper"))  # ORM_OUT: a regeneration
 TIMETABLE_DIR = PAPER / os.environ.get("ORM_TIMETABLE", "timetable")
 OUTPUT_DIR = PAPER / "timetable_city_market"
@@ -202,7 +202,7 @@ def build_city_market_table(
     # (Retford low level XRO, Worcestershire Parkway high level WPH),
     # which no zone holds: read as their own codes, Paddington ->
     # Worcestershire Parkway's 20 trains a day were lost and it scored
-    # as an unserved market (case 25).
+    # as an unserved market.
     recodes = resolve_recodes(None)
     aliases = resolve_aliases(None)
 

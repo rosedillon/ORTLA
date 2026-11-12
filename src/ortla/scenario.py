@@ -89,9 +89,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-# ----------------------------------------------------------------------
 # Inputs / outputs
-# ----------------------------------------------------------------------
 @dataclass
 class ScenarioAssumptions:
     """Everything the appraisal side of a scenario needs.
@@ -298,9 +296,7 @@ def build_scenario_context(
     )
 
 
-# ----------------------------------------------------------------------
 # Appraisal helpers
-# ----------------------------------------------------------------------
 def _build_params(
     assumptions: ScenarioAssumptions,
     name: str,
@@ -470,9 +466,7 @@ def commercial_case_for_option(
     return run_commercial_case(params)
 
 
-# ----------------------------------------------------------------------
 # Time-saving derivation
-# ----------------------------------------------------------------------
 def _candidate_journey_minutes(candidate: CandidateService) -> float | None:
     """Return the candidate's end-to-end minutes, or ``None``.
 
@@ -604,9 +598,7 @@ def _leg_time_saving(
     return saved / weight if weight else None
 
 
-# ----------------------------------------------------------------------
 # Departure evaluation
-# ----------------------------------------------------------------------
 def _evaluate_single_departure(
     config: ProposeConfig,
     candidate: CandidateService,
@@ -1079,9 +1071,7 @@ def _diagnose_empty_result(
     )
 
 
-# ----------------------------------------------------------------------
 # Public entry point
-# ----------------------------------------------------------------------
 def generate_scenarios(
     config: ProposeConfig,
     assumptions: ScenarioAssumptions,
@@ -1245,9 +1235,7 @@ def generate_scenarios(
     )
 
 
-# ----------------------------------------------------------------------
 # CLI wrapper
-# ----------------------------------------------------------------------
 def _option_row(candidate_name: str, rank: int, opt: ScenarioOption) -> dict[str, object]:
     return {
         "candidate_name": candidate_name,

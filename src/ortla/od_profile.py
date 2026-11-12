@@ -19,7 +19,7 @@ where ``s'`` is the profile smoothed by ``kappa`` trips and ``f`` is
 rescaled so ``sum(trips * f)`` is unchanged.
 
 Strength 0 leaves the matrix as it is and 1 takes the profile's split.
-Case 37 found 0.5 best, both against counted loads (rmse(log) 0.562 to
+0.5 scored best, both against counted loads (rmse(log) 0.562 to
 0.532, held out by corridor 0.558 to 0.519) and against AWC's hourly
 gateline counts, where the profile on its own over-weights the evening
 and ours the early and morning peak. Pairs the profile does not cover

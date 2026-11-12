@@ -127,9 +127,7 @@ _INSTANCE_KEY = [
 ]
 
 
-# ----------------------------------------------------------------------
 # Small normalisers
-# ----------------------------------------------------------------------
 def _clean_headers(df: pd.DataFrame) -> pd.DataFrame:
     """Strip non-breaking and repeated spaces from column names."""
     df.columns = [re.sub(r"\s+", " ", str(c).replace("\xa0", " ")).strip() for c in df.columns]
@@ -239,9 +237,7 @@ def _files(path: pathlib.Path, patterns: tuple[str, ...]) -> list[pathlib.Path]:
     return [p for p in found if not p.name.startswith(("~$", "."))]
 
 
-# ----------------------------------------------------------------------
 # Readers, one per published layout
-# ----------------------------------------------------------------------
 def read_northern(path: pathlib.Path, **_: object) -> pd.DataFrame:
     """Northern: period CSVs with passengers on, off and load."""
     chunks = []
@@ -641,8 +637,7 @@ def read_swr(
         book = pd.read_excel(file, sheet_name=None, header=None)
         # The file name's railway period gives the true dates. The Notes
         # sheet runs a week early and twice has the wrong year, and the
-        # Rail Period column labels both RY26 P01 and P02 "RY25 P13"
-        # (case 18).
+        # Rail Period column labels both RY26 P01 and P02 "RY25 P13".
         label = re.search(r"RY\d{2}\s*P\d{2}", file.name)
         start, end = _rail_period_dates(label.group(0)) if label else (None, None)
         if start is None:
@@ -718,7 +713,7 @@ def _average_counts_frame(
 
     ``window`` is the count window in the file name. It replaces the
     dates in the cells, which come as yyyy/mm/dd, dd/mm/yyyy or ISO, so
-    some files read month first (case 18).
+    some files read month first.
     """
     raw = _clean_headers(raw)
     if "Train UId" in raw.columns:  # layout from Aug 2025 onwards

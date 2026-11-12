@@ -393,7 +393,9 @@ class RailModelApp(QMainWindow):
         return True
 
     def _save_project_as(self) -> bool:
-        path, _ = QFileDialog.getSaveFileName(self, "Save Project As", "", "ORTLA project (*.ortla)")
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save Project As", "", "ORTLA project (*.ortla)"
+        )
         if not path:
             return False
 

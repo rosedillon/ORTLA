@@ -47,7 +47,7 @@ def _day_calls() -> pd.DataFrame:
     train("A01", "2026-01-01", [("AAA", "0700"), ("BBB", "0710"), ("CCC", "0720")])
     train("A02", "2026-01-01", [("CCC", "0800"), ("BBB", "0810"), ("AAA", "0820")])
     # Calls at BBB twice: the train serves BBB -> CCC once, by the
-    # shorter leg from its second BBB call (case 19, L1).
+    # shorter leg from its second BBB call.
     train(
         "A03",
         "2026-01-01",

@@ -46,7 +46,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "src"))
 from ortla.gravity_model import load_direct_frequency
 from ortla.od_matrix import read_odm
 
-DATASOURCES = pathlib.Path(os.environ.get("ORM_DATA", "/Volumes/ENGG341/datasources"))
+DATASOURCES = pathlib.Path(os.environ.get("ORTLA_DATA", "datasources"))
 # The era timetables; ORM_OUT points a regeneration at its own
 # (paper/regen).
 OUTPUT = pathlib.Path(os.environ.get("ORM_OUT", DATASOURCES / "output_paper"))

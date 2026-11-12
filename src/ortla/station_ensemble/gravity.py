@@ -24,6 +24,7 @@ import numpy as np
 import pandas as pd
 from scipy.spatial import cKDTree
 
+from ortla.clock import cif_minutes
 from ortla.station_ensemble import sources
 
 if TYPE_CHECKING:
@@ -54,13 +55,7 @@ _SKIM_COLUMNS = [
 # fmt: on
 
 
-# ---------------------------------------------------------------- the timetable skim
-def _clock_minutes(times: pd.Series) -> np.ndarray:
-    s = times.fillna("").astype(str)
-    hh, mm = pd.to_numeric(s.str[:2], errors="coerce"), pd.to_numeric(s.str[2:4], errors="coerce")
-    return (hh * 60 + mm + np.where(s.str[4:5] == "H", 0.5, 0.0)).to_numpy(float)
-
-
+# The timetable skim
 def _day_calls(calls_path: pathlib.Path, date: str) -> pd.DataFrame:
     """Read the public calls of passenger trains on ``date``, in order along each train.
 
@@ -90,7 +85,8 @@ def _day_calls(calls_path: pathlib.Path, date: str) -> pd.DataFrame:
     c["svc"] = pd.factorize(train)[0]
     c["seq"] = pd.to_numeric(c["seq"])
     c = c.sort_values(["svc", "seq"]).reset_index(drop=True)
-    dep, arr = _clock_minutes(c["public_departure"]), _clock_minutes(c["public_arrival"])
+    dep = cif_minutes(c["public_departure"], half_minutes=True)
+    arr = cif_minutes(c["public_arrival"], half_minutes=True)
     c["dep"] = np.where(np.isnan(dep), arr, dep)
     c["arr"] = np.where(np.isnan(arr), dep, arr)
     start = c.groupby("svc")["dep"].transform("first").to_numpy()
@@ -184,7 +180,7 @@ def _one_more_change(first_leg: np.ndarray, rest: np.ndarray) -> np.ndarray:
     return out
 
 
-# ---------------------------------------------------------------- pairs
+# Pairs
 def pairs(
     sk: pd.DataFrame,
     journeys: pd.Series,
@@ -249,7 +245,7 @@ def odm_journeys(odm_csv: pathlib.Path) -> pd.Series:
     return o.groupby([a, b])["journeys"].sum()
 
 
-# ---------------------------------------------------------------- stage 1
+# Stage 1
 def stage1(pairs_: pd.DataFrame, rows: np.ndarray, n: int) -> tuple[np.ndarray, np.ndarray]:
     """Fit station masses ``a`` and impedance ``b`` on the pairs in ``rows``.
 
@@ -283,7 +279,7 @@ def stage1(pairs_: pd.DataFrame, rows: np.ndarray, n: int) -> tuple[np.ndarray, 
     return a, b
 
 
-# ---------------------------------------------------------------- accessibility
+# Accessibility
 class Network:
     """Pairs, impedance and the competition kernel over a fixed set of stations."""
 

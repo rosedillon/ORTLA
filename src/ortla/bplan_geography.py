@@ -259,7 +259,7 @@ class BplanTimingGraph:
         # Bus, ship, Underground and Metro timings are not trains on
         # Network Rail track: a bus link Kenton -> Preston Park put
         # Harrow 19.5 minutes from Brighton for any traction without a
-        # timing of its own (case 28).
+        # timing of its own.
         code = links["traction_code"].fillna("").str.strip().str.upper()
         links = links[~(code.str.startswith("BUS") | code.isin(_NON_RAIL_TRACTION))]
 

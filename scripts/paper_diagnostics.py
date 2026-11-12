@@ -31,7 +31,7 @@ from ortla.clock import classify_times
 from ortla.gravity_model import load_direct_frequency
 from ortla.stations import load_table_1410
 
-DS = pathlib.Path(os.environ.get("ORM_DATA", "/Volumes/ENGG341/datasources"))
+DS = pathlib.Path(os.environ.get("ORTLA_DATA", "datasources"))
 # ORM_OUT and ORM_TIMETABLE point a regeneration at its own outputs
 # (paper/regen).
 OUT = pathlib.Path(os.environ.get("ORM_OUT", DS / "output_paper"))

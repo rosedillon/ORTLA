@@ -409,7 +409,7 @@ def clear_timetable_caches() -> None:
 
     Harmless within one run; a discovery sweep builds new frames for
     every candidate, and holding them all grew each process to 7.5 GB by
-    its 50th pair (case 28).
+    its 50th pair.
     """
     for cache in (_TIMETABLE_CACHE, _JOURNEY_TIME_CACHE, _EXISTING_JOURNEY_CACHE):
         cache.clear()
@@ -621,9 +621,7 @@ def existing_trains(
     return od_services(filtered, origin, destination, cutoffs)
 
 
-# ----------------------------------------------------------------------
 # Destination substitution and route choice
-# ----------------------------------------------------------------------
 # Times are read off the timetable once per (day-table, station) and
 # reused for every leg and competing terminal, so the two-leg
 # interchange search below costs one pass over the day's calls rather
@@ -643,7 +641,7 @@ _MAX_CONNECTION_MINUTES = 360
 # Crossing London between terminals by Underground or on foot (Euston ->
 # Victoria), wait included, charged on top of the interchange penalty.
 # Without it Birmingham -> Brighton had no journey through London and a
-# direct train "saved" 70 minutes (case 28).
+# direct train "saved" 70 minutes.
 _CROSS_LONDON_MINUTES = 30.0
 
 
