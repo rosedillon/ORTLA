@@ -127,6 +127,9 @@ unfixable = [
     "PLC0415",
     "S301",    # the scripts read the package's own cache pickles
 ]
+"reference/*" = [
+    "T20",  # a build step; its printed counts go to the build log
+]
 "examples/*" = [
     "T20",  # allow print statements
     "D205", # allow one-liner docstrings

@@ -1,0 +1,114 @@
+# The reference train-loading model, frozen on 10 November 2026. build.sh renders this file with your
+# data and output folders and runs `ortla assign` on it.
+output_path: {OUT}/output
+timetable_calls_path: {OUT}/timetable_may26/timetable_calls.csv
+reference_date: "2026-06-17"
+days:
+  - Monday
+  - Tuesday
+  - Wednesday
+  - Thursday
+  - Friday
+operators:
+  gwr:
+    atoc_codes:
+      - GW
+    period_matrices_dir: {OUT}/baselines/gwr/gwr_period_matrices
+    counts: {DATA}/gwr-loading-data
+    counts_cache_dir: {OUT}/counts_cache
+    counts_date_from: "2026-05-31"
+  gtr:
+    atoc_codes:
+      - TL
+      - SN
+      - GN
+      - GX
+    period_matrices_dir: {OUT}/baselines/gtr/gtr_period_matrices
+    counts: {DATA}/gtr-loading-data
+    counts_cache_dir: {OUT}/counts_cache
+    counts_date_from: "2026-05-31"
+  southeastern:
+    atoc_codes:
+      - SE
+    period_matrices_dir: {OUT}/baselines/southeastern/southeastern_period_matrices
+    counts: {DATA}/southeastern-loading-data
+    counts_cache_dir: {OUT}/counts_cache
+    counts_date_from: "2026-05-31"
+  swr:
+    atoc_codes:
+      - SW
+      - IL
+    period_matrices_dir: {OUT}/baselines/swr/swr_period_matrices
+    counts: {DATA}/swr-loading-data
+    counts_cache_dir: {OUT}/counts_cache
+    # SWR's counts read about 1.35 times higher from April 2026 on the same trains and stock,
+    # so SWR is scored on RY26 P03 and P04, the last periods on the old basis.
+    counts_date_from: "2025-06-01"
+    counts_date_to: "2025-06-29"
+  greater_anglia:
+    atoc_codes:
+      - LE
+    period_matrices_dir: {OUT}/baselines/greater_anglia/greater_anglia_period_matrices
+    counts: {DATA}/greateranglia-loading-data
+    counts_cache_dir: {OUT}/counts_cache
+    counts_date_from: "2026-05-31"
+  northern:
+    atoc_codes:
+      - NT
+    period_matrices_dir: {OUT}/baselines/northern/northern_period_matrices
+    counts: {DATA}/northern-loading-data
+    counts_cache_dir: {OUT}/counts_cache
+    counts_date_from: "2026-05-31"
+  emr:
+    atoc_codes:
+      - EM
+    period_matrices_dir: {OUT}/baselines/emr/emr_period_matrices
+    counts: {DATA}/emr-loading-data
+    counts_cache_dir: {OUT}/counts_cache
+    counts_date_from: "2026-05-31"
+  tpe:
+    atoc_codes:
+      - TP
+    period_matrices_dir: {OUT}/baselines/tpe/tpe_period_matrices
+    counts: {DATA}/tpe-loading-data
+    counts_cache_dir: {OUT}/counts_cache
+  awc:
+    atoc_codes:
+      - VT
+    period_matrices_dir: {OUT}/baselines/awc/awc_period_matrices
+    counts: {DATA}/awc-loading-data
+    counts_cache_dir: {OUT}/counts_cache
+  c2c:
+    atoc_codes:
+      - CC
+    period_matrices_dir: {OUT}/london_mean_period_matrices
+  chiltern:
+    atoc_codes:
+      - CH
+    period_matrices_dir: {OUT}/london_mean_period_matrices
+  crosscountry:
+    atoc_codes:
+      - XC
+    period_matrices_dir: {OUT}/national_mean_period_matrices
+# Other operators without counts: the London mean for flows with an end within 20 km of Charing Cross,
+# the national mean elsewhere.
+other_period_matrices_dir: {OUT}/flow_period_matrices_20km
+stations:
+  path: {DATA}/stations.csv
+table_1410: {DATA}/table-1410/by_year/table_1410_2024_25.csv
+direction_split_model: national
+slot_share_model: neural
+slot_share_profile: {DATA}/sram/SRAM_Summer24_O03_ODHourlyRoutes.parquet
+transfer_scale: 1.0
+transfer_scale_london: 2.30
+transfer_choice_theta: 0.2
+# No station_recodes: the package's defaults apply, including St Pancras's SPL and SPX.
+associations_path: {OUT}/timetable_may26/timetable_associations.csv
+portion_counts: joined
+odm_open_share:
+  LEV: 0.833
+  CBX: 0.833
+  ASD: 0.507
+  ASL: 0.293
+  SEJ: 0.293
+  NWH: 0.041

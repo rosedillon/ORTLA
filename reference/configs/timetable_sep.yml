@@ -1,0 +1,21 @@
+# National timetable from the full daily CIF extracted 11 September 2026. The loading step reads it
+# to map TIPLOCs to stations.
+#
+# crs_reference recovers the platform-group TIPLOCs the CIF publishes with a
+# null crs_code (WATRLMN, VICTRIC/E, CLPHMJM/C/W/1, VAUXHLM/W, WDON ...) by
+# matching their tps_description against the station list. Without it every
+# call at those locations is dropped and Waterloo, Victoria, London Bridge,
+# Clapham Junction and Vauxhall vanish from the national network entirely.
+#
+# station_list stays unset: this is a national run, so every station is kept.
+output_path: "{OUT}/timetable_sep"
+cif_path: "{DATA}/timetable-data/new-schedule/CIF_ALL_FULL_DAILY_toc-full.json"
+crs_reference: "{DATA}/stations.csv"
+reference_date: "2026-11-18"
+reuse_existing_calls: false
+
+# "STOURBRIDGE JN (TOWN PLAT)" is too abbreviated to match "Stourbridge
+# Junction" by name, and expanding abbreviations automatically would risk
+# mapping locations that are not stations.
+tiploc_crs_overrides:
+  STRBDG1: SBJ

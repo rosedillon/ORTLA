@@ -35,6 +35,7 @@ from ortla import (
     propose,
     scenario,
     service_lookup,
+    station_ensemble,
     timetable,
     track_distance,
     trip_lookup,
@@ -1400,6 +1401,43 @@ class NewStationConfig(BaseRunConfig):
         new_station.run_new_station(self)
 
 
+class EnsembleProposedStation(ProposedStation):
+    """A station not open yet, described as the ensemble needs it."""
+
+    name: str = ""
+    # The ATOC code of the operator that would run it (NT, GW, ...).
+    operator: str
+    # The stations its trains call at, with minutes to each from the proposal.
+    stops: dict[str, float]
+    # Sunday trains calling; unset takes the scored stations' mean Sunday-to-weekday ratio.
+    sunday_trains_per_day: float | None = None
+    # With staffed, whether staff are there only part of the day.
+    part_time: bool = False
+    request_stop: bool = False
+
+
+class StationEnsembleConfig(BaseRunConfig):
+    """Forecast stations' entries and exits with the thirteen-member ensemble."""
+
+    # The folder holding every input, laid out as in
+    # station_ensemble/README.md.
+    data_dir: pathlib.Path
+    # Stations not open yet. Without any, the run fits, scores and writes
+    # the openings' forecasts only.
+    proposed: list[EnsembleProposedStation] = pydantic.Field(default_factory=list)
+    # Existing stations within this distance of a proposal are listed
+    # with their forecasts without and with it.
+    neighbour_km: float = 15.0
+    # Where to keep the slow intermediate results between runs (the
+    # timetable passes, the skim and stage 1 of the gravity model).
+    # Empty it when the inputs change.
+    cache_dir: pathlib.Path | None = None
+
+    def run(self) -> None:
+        """Fit, score and forecast."""
+        station_ensemble.run(self)
+
+
 class AssignOperatorConfig(ctk.BaseConfig):
     """One operator's trains: its matrices and optional counts."""
 
@@ -1554,5 +1592,9 @@ COMMANDS: dict[str, tuple[type[BaseRunConfig], str]] = {
     "new-station": (
         NewStationConfig,
         "forecast a new station's annual entries and exits with SDFT's model",
+    ),
+    "station-ensemble": (
+        StationEnsembleConfig,
+        "forecast stations' entries and exits with the thirteen-member ensemble",
     ),
 }

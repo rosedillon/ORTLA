@@ -1,0 +1,40 @@
+# Config for: ortla station-ensemble
+# Forecast stations' annual entries and exits with the thirteen-member
+# ensemble: SDFT's trip end and a structural gravity model's reach of the
+# network, fitted thirteen ways and averaged, then adjusted by the
+# residuals of established stations nearby. Every run refits on the
+# established stations, scores itself on the stations opened 1998-2023
+# and writes their forecasts; proposed stations are forecast on top.
+#
+# data_dir holds every input, laid out as in
+# src/ortla/station_ensemble/README.md. Run `timetable` first for the two
+# timetables it names. The first run takes about ten minutes; the cache
+# makes later ones a minute or two.
+#
+# Copy this file into configs/ and fill in your own paths:
+#   ortla station-ensemble configs/station-ensemble.yml
+output_path: "outputs/station-ensemble"
+cache_dir: "outputs/station-ensemble/cache"
+data_dir: "/path/to/datasources"
+
+proposed:
+  - code: XEA
+    name: "Earby"
+    latitude: 53.9177
+    longitude: -2.1407
+    operator: NT
+    trains_per_day: 64
+    sunday_trains_per_day: 32
+    car_spaces: 50
+    # Minutes from the proposal to each station its trains call at.
+    stops:
+      LDS: 42
+      SHY: 30
+      KEI: 16
+      SKI: 7
+      CNE: 9
+      NLS: 14
+      BNC: 22
+      ACR: 34
+      BBN: 41
+      PRE: 78

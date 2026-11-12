@@ -1,0 +1,20 @@
+# Era-matched national timetable clean: the May 2026 published timetable,
+# extracted on 24 June 2026 (inside the count window).
+#
+# The default timetable (timetable_sep.yml) is the daily feed's full
+# extract of 11 September, which no longer holds schedules that ended before
+# then: on Wednesday 17 June, the model's reference date, it is short of
+# about 850 trains, including all but one High Speed 1 train. This extract
+# holds 23,098 trains that day against 22,246, and 147 calling at Ebbsfleet
+# International against 1.
+#
+# A published extract leaves the STP indicator blank; the reader takes blank as
+# permanent. Same crs_reference and override as timetable_sep.yml.
+output_path: "{OUT}/timetable_may26"
+cif_path: "{DATA}/timetable-data/various/May26 publsihed 240626.cif"
+crs_reference: "{DATA}/stations.csv"
+reference_date: "2026-06-17"
+reuse_existing_calls: false
+
+tiploc_crs_overrides:
+  STRBDG1: SBJ
