@@ -129,7 +129,14 @@ def assign_day(  # noqa: C901, PLR0912
     footfall: dict[str, int],
     coordinates: pd.DataFrame | None,
 ) -> pd.DataFrame:
-    """Every loaded train's segments on ``weekday``, with operator."""
+    """Every loaded train's segments on ``weekday``, with operator.
+
+    Demand is the fixed base-year matrix, so this loads a timetable; it does not forecast a
+    change to it. Cut trains and their passengers move to the trains left, and a pair that
+    loses its direct train changes instead, adding a boarding (case 195). The direct and
+    changing journeys are logged and kept in ``attrs`` (``journeys_direct``,
+    ``journeys_changing``); for a service change use ``propose`` or ``scenario``.
+    """
     cutoffs = config.time_periods_cutoffs
     periods = ["early", *cutoffs]
     aliases = resolve_aliases(config.station_aliases)
@@ -180,6 +187,7 @@ def assign_day(  # noqa: C901, PLR0912
     lam = np.where(london.to_numpy(), scale_london, config.transfer_scale)
 
     daily = np.full(len(legs), np.nan)
+    direct = np.zeros(len(legs))
     operator = np.full(len(legs), "", dtype=object)
     for name, codes, directory in groups:
         k = np.flatnonzero(~np.isin(atoc, list(listed)) if name == OTHER else np.isin(atoc, codes))
@@ -210,13 +218,11 @@ def assign_day(  # noqa: C901, PLR0912
                     extra, share = routes.choice_demand(p, trips)
                     chosen[at] = np.asarray(extra[oi[at], di[at]]).ravel()
                     changing[at] = np.asarray(share[oi[at], di[at]]).ravel()
-        value = (
-            (cell * (1 - changing) + chosen + lam[k] * routed)
-            * factors[k]
-            * shares[k]
-            / WEEKDAYS_PER_YEAR
-        )
-        daily[k] = np.where(has | (chosen > 0), value, np.nan)
+        scale = factors[k] * shares[k] / WEEKDAYS_PER_YEAR
+        keep = has | (chosen > 0)
+        value = (cell * (1 - changing) + chosen + lam[k] * routed) * scale
+        daily[k] = np.where(keep, value, np.nan)
+        direct[k] = np.where(keep, cell * (1 - changing) * scale, 0.0)
     loaded = operator != ""
     segments = segment_loads(day, legs[loaded], np.nan_to_num(daily)[loaded])
     trains = pd.Series(operator[loaded]).groupby(legs["service"][loaded].to_numpy()).first()
@@ -248,14 +254,23 @@ def assign_day(  # noqa: C901, PLR0912
         ]
         if config.portion_counts == "joined":
             segments = fold_joint_segments(day, segments, portions)
+    on_direct = float(direct[loaded].sum())
+    on_change = float(np.nan_to_num(daily)[loaded].sum()) - on_direct
     logger.info(
-        "%s: %d trains loaded, %d legs, %.0f boardings.",
+        "%s: %d trains loaded, %d legs, %.0f boardings, about %.0f journeys (%.0f direct,"
+        " %.0f changing once). Demand is the fixed matrix: a service cut moves journeys"
+        " to other trains and changes, it does not lose them.",
         weekday,
         segments["service"].nunique(),
         int(loaded.sum()),
         segments["boardings"].sum(),
+        on_direct + on_change / 2,
+        on_direct,
+        on_change / 2,
     )
-    return segments.assign(day=weekday)
+    out = segments.assign(day=weekday)
+    out.attrs["journeys_direct"], out.attrs["journeys_changing"] = on_direct, on_change / 2
+    return out
 
 
 def match_counts(

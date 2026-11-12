@@ -213,6 +213,33 @@ def service(calls_path: pathlib.Path, reference_date: str) -> pd.DataFrame:
     return out[out["freq"] > 0]
 
 
+def independent_services(stops_path: pathlib.Path) -> pd.Series:
+    """Count each station's services in Network Rail SRAM's stops file (O04 StopsAndPasses).
+
+    A service counts once per station where passengers may board or alight. SRAM reads its
+    timetable from a different extract, so it catches schedules missing from ours (case 205).
+    """
+    s = pd.read_parquet(
+        stops_path, columns=["VehicleJourneyNo", "ATOC", "CRS", "AlightAllowed", "BoardAllowed"]
+    )
+    s = s[(s["ATOC"] != "ZZ") & ((s["AlightAllowed"] > 0) | (s["BoardAllowed"] > 0))]
+    aliases = resolve_aliases(None)
+    crs = s["CRS"].astype(str).map(lambda c: canonical_crs(c, aliases))
+    s = s.assign(crs=crs)[crs.str.fullmatch(r"[A-Z]{3}")]
+    s = s[s.groupby("VehicleJourneyNo")["crs"].transform("nunique") >= 2]
+    return s.drop_duplicates(["VehicleJourneyNo", "crs"]).groupby("crs").size().astype(float)
+
+
+def frequency_disagreements(
+    trains: pd.Series, independent: pd.Series, factor: float = 2.0
+) -> pd.DataFrame:
+    """Return stations whose daily trains differ from an independent count by over ``factor``."""
+    both = pd.DataFrame({"freq": trains, "independent": independent}).dropna()
+    ratio = both["freq"] / both["independent"]
+    out = both.assign(ratio=ratio.round(3))
+    return out[(ratio > factor) | (ratio < 1 / factor)].sort_values("ratio")
+
+
 def catchments(stations: pd.DataFrame, people: pd.DataFrame) -> pd.Series:
     """Return each station's choice- and distance-weighted catchment population."""
     tree = cKDTree(stations[["e", "n"]].to_numpy())
@@ -223,7 +250,9 @@ def catchments(stations: pd.DataFrame, people: pd.DataFrame) -> pd.Series:
         for k in ("cat_f", "cctv", "car_spaces", "ticket_machine", "bus")
     }
     utility = (
-        CHOICE["nearest"] * (np.arange(CHOICE_SET) == 0)
+        # Every station as near as the nearest counts as nearest, so a tie
+        # isn't broken by the tree's order (case 195, N4).
+        CHOICE["nearest"] * (dist == dist[:, :1])
         + CHOICE["sqrt_km"] * np.sqrt(dist / 1000)
         + CHOICE["cat_f"] * attr["cat_f"]
         + CHOICE["ln_freq"] * np.log(stations["freq"].to_numpy()[idx])
@@ -394,6 +423,8 @@ def run_new_station(config: NewStationConfig) -> pd.DataFrame:
     )
     trains = pd.concat([trains.drop(extra_trains.index, errors="ignore"), extra_trains])
 
+    checked = _check_frequencies(config, cal_trains, trains)
+
     domain = observed(config.domain_footfall)["footfall"]
     domain = domain.index[(domain > 0) & (domain < config.small_station_threshold)]
     footfall = observed(config.calibration_footfall)
@@ -423,6 +454,22 @@ def run_new_station(config: NewStationConfig) -> pd.DataFrame:
 
     sdft = np.exp(trip_end(after.loc[present], const))
     forecast = sdft * np.exp(lift)
+    # The trip end has a floor of exp(const) x frequency terms at zero
+    # population and jobs, so an empty place still forecast thousands a
+    # year (case 195, N2). With nobody to serve, forecast nothing.
+    rows = after.loc[present]
+    empty = ((rows["prw_pop"] < 1) & (rows["jobs"] < 1)).to_numpy()
+    forecast = np.where(empty, 0.0, forecast)
+    warnings = _warnings(rows, cal, empty, forecast, config.small_station_threshold)
+    if checked is not None:
+        for i, crs in enumerate(present):
+            if crs in checked.index:
+                r = checked.loc[crs]
+                note = f"{r['freq']:g} trains a day against {r['independent']:g} in SRAM"
+                warnings[i] = "; ".join(filter(None, [warnings[i], note]))
+    for crs, text in zip(present, warnings, strict=True):
+        if text:
+            logger.warning("%s: %s", crs, text)
     out = pd.DataFrame(
         {
             "sdft_forecast": sdft.round(),
@@ -432,7 +479,9 @@ def run_new_station(config: NewStationConfig) -> pd.DataFrame:
             "high_80": (forecast * half_80).round(),
             "low_90": (forecast / half_90).round(),
             "high_90": (forecast * half_90).round(),
-        }
+            "warning": warnings,
+        },
+        index=present,
     )
     inputs = ["prw_pop", "freq", "jobs", "car_spaces", "electric", "terminus", "travelcard"]
     out = out.join(after.loc[present, [*inputs, "cat_f"]].round(1))
@@ -475,6 +524,53 @@ def run_new_station(config: NewStationConfig) -> pd.DataFrame:
         "Forecasts:\n%s", out[["sdft_forecast", "forecast_entries_exits", "low_80", "high_80"]]
     )
     return out
+
+
+def _warnings(
+    rows: pd.DataFrame,
+    cal: pd.DataFrame,
+    empty: np.ndarray,
+    forecast: np.ndarray,
+    domain_max: float,
+) -> list[str]:
+    """Say where a forecast rests on nothing or reaches past the calibration stations."""
+    out = []
+    for i, (_, r) in enumerate(rows.iterrows()):
+        notes = []
+        if empty[i]:
+            notes.append("no population or jobs in reach (outside the census inputs?); forecast 0")
+        for column, label in (("freq", "trains a day"), ("car_spaces", "car spaces")):
+            top = float(cal[column].max())
+            if r[column] > top:
+                notes.append(f"{label} {r[column]:g} above any calibration station's ({top:g})")
+        if forecast[i] > domain_max:
+            notes.append(f"forecast above SDFT's size domain ({domain_max:,.0f})")
+        out.append("; ".join(notes))
+    return out
+
+
+def _check_frequencies(
+    config: NewStationConfig, cal_trains: pd.DataFrame, trains: pd.DataFrame
+) -> pd.DataFrame | None:
+    """Compare both timetables' daily trains with SRAM's and write the disagreements."""
+    if config.frequency_check is None:
+        return None
+    independent = independent_services(config.frequency_check)
+    found = []
+    for label, frame in (("calibration", cal_trains), ("forecast", trains)):
+        bad = frequency_disagreements(frame["freq"], independent)
+        if len(bad):
+            logger.warning(
+                "%s timetable: %d stations' daily trains differ from SRAM's by over x2 "
+                "(missing schedules?); see new_station_frequency_check.csv",
+                label,
+                len(bad),
+            )
+        found.append(bad.assign(timetable=label))
+    out = pd.concat(found)
+    out.index.name = "crs"
+    out.to_csv(config.output_path / "new_station_frequency_check.csv")
+    return out[out["timetable"] == "forecast"]
 
 
 def _lat_lon(frame: pd.DataFrame) -> pd.DataFrame:

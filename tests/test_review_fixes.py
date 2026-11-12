@@ -244,3 +244,20 @@ def test_station_list_keeps_nantwich(tmp_path: pathlib.Path) -> None:
     codes, tiploc_to_crs = stations.read_station_list(path)
     assert codes == {"NAN"}
     assert tiploc_to_crs == {"NANTWCH": "NAN"}
+
+
+def test_propose_names_station_pairs_two_candidates_share():
+    from ortla.config import CandidateService, ServiceStop
+    from ortla.propose import shared_pairs
+
+    def service(name, codes):
+        return CandidateService(
+            name=name,
+            traction_code="158",
+            days_of_week=["Wednesday"],
+            stops=[ServiceStop(station=c) for c in codes],
+        )
+
+    one = service("a", ["OXF", "BLY", "CBG"])
+    assert shared_pairs([one]) == []
+    assert shared_pairs([one, service("b", ["CBG", "BDM", "OXF"])]) == [("CBG", "OXF")]

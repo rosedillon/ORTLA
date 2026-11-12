@@ -1385,6 +1385,10 @@ class NewStationConfig(BaseRunConfig):
     # from the calibration stations' left-out residuals either way.
     borrow_km: float = 2.0
     borrow_kappa: float = 0.25
+    # Network Rail SRAM's stops file (O04 StopsAndPasses, parquet). When given, any station
+    # whose daily trains differ from SRAM's by more than x2 is listed and flagged: our
+    # extracts can miss whole schedules (case 205: Darwen 4 trains a day against SRAM's 65).
+    frequency_check: pathlib.Path | None = None
     # Existing stations within this distance of a new one are listed
     # with their catchments without and with it.
     neighbour_km: float = 15.0

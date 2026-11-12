@@ -693,3 +693,30 @@ def test_choice_changes_move_a_served_pair_to_a_quicker_change(matrices):
     assert chosen.trips("Wednesday", "am_peak", "BBB", "CCC") == pytest.approx(share * a_to_c)
     # A pair with no quicker change keeps its trips on the direct train.
     assert chosen.direct_share("Wednesday", "am_peak", "AAA", "BBB") == 0.0
+
+
+def test_a_call_repeated_under_one_sequence_number_is_dropped_with_a_warning(calls, caplog):
+    clean = na.day_calls(calls, WEDNESDAY, "Wednesday")
+    t1 = calls[calls["train_uid"] == "T1"]
+    doubled = pd.concat([calls, t1.iloc[[1]]], ignore_index=True)
+    day = na.day_calls(doubled, WEDNESDAY, "Wednesday")
+    assert len(day) == len(clean)
+    assert "repeat another call" in caplog.text
+
+
+def test_times_running_backwards_are_warned_but_midnight_is_not(caplog):
+    back = pd.DataFrame(
+        _train(
+            "B1", "9Z01", [("AAA", None, "0900"), ("BBB", "0850", "0851"), ("CCC", "0840", None)]
+        )
+    )
+    na.day_calls(back, WEDNESDAY, "Wednesday")
+    assert "running backwards" in caplog.text and "B1" in caplog.text
+    caplog.clear()
+    night = pd.DataFrame(
+        _train(
+            "N1", "9Z02", [("AAA", None, "2350"), ("BBB", "0005", "0006"), ("CCC", "0020", None)]
+        )
+    )
+    na.day_calls(night, WEDNESDAY, "Wednesday")
+    assert "running backwards" not in caplog.text

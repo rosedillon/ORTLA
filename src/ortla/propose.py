@@ -216,6 +216,19 @@ def _report_demand_and_loading(
         )
 
 
+def shared_pairs(services: list[CandidateService]) -> list[tuple[str, str]]:
+    """Unordered station pairs that two or more candidates both serve."""
+    seen: dict[tuple[str, str], int] = {}
+    for candidate in services:
+        codes = [s.station.upper() for s in candidate.stops]
+        pairs = {
+            tuple(sorted((a, b))) for i, a in enumerate(codes) for b in codes[i + 1 :] if a != b
+        }
+        for pair in pairs:
+            seen[pair] = seen.get(pair, 0) + 1
+    return sorted(p for p, n in seen.items() if n > 1)
+
+
 def run_propose(config: ProposeConfig) -> None:
     """Check every candidate's feasibility and predict its demand.
 
@@ -266,6 +279,16 @@ def run_propose(config: ProposeConfig) -> None:
     fares = build_fares_context(config)
 
     issues: list[str] = []
+    shared = shared_pairs(config.services)
+    if shared:
+        logger.warning(
+            "%d station pairs are served by more than one candidate (%s). propose prices"
+            " each candidate as the only new train, so they don't dilute each other and"
+            " the new-link uplift doesn't see their combined frequency. Price a package of"
+            " trains with `scenario`.",
+            len(shared),
+            ", ".join(f"{o}-{d}" for o, d in shared[:5]),
+        )
     for candidate in config.services:
         logger.info("Checking candidate service '%s' ...", candidate.name)
 

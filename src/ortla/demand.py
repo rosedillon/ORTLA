@@ -943,6 +943,7 @@ def calibrated_leg(
     period: str,
     *,
     existing_trips: float,
+    pair_trips: float | None = None,
     trains_in_period: int,
     trains_per_day: int,
     added_in_period: int,
@@ -1007,6 +1008,12 @@ def calibrated_leg(
     Generated demand cannot be told apart from the cell and is reported
     as zero.
 
+    ``pair_trips`` is the pair's demand before choice changers leave it
+    (``existing_trips`` is after). A pair with any takes the new-link
+    branch, never the synthetic one, and when the new-link floor binds its
+    excess over the time share is abstracted from ``pair_trips`` first;
+    only the part above it, or the uplift if larger, is generated.
+
     ``share_trains`` replaces ``trains_in_period + added_in_period`` as
     the divisor when a slot share model
     (:class:`~ortla.network_assignment.SlotShareModel`)
@@ -1040,6 +1047,9 @@ def calibrated_leg(
     after = trains_per_day + added_per_day
     substituted = choice is not None and choice.substituted_trips is not None
     base = choice.substituted_trips if substituted else existing_trips
+    # What abstraction can draw on: the pair's demand before any of it
+    # changes trains by choice.
+    gross = max(base, pair_trips or 0.0)
 
     if base > 0 and trains_in_period > 0:
         # Demand is shared over the trains in the *period*, so when
@@ -1057,7 +1067,7 @@ def calibrated_leg(
         label = "gravity_pivot"
     else:
         synthetic, _ = gravity.synthetic_slot_trips(stop_i, stop_j, day, period, after)
-        if base > 0:
+        if gross > 0:
             # No direct train in this slot before, so the whole
             # denominator is the trains being added and the cell's
             # demand was reaching the destination some other way.
@@ -1077,7 +1087,13 @@ def calibrated_leg(
             first_link = trains_per_day == 0 and after >= new_link_min_trains
             uplift = new_link_uplift if first_link else 0.0
             old = base * share  # moved off the old route, not new to rail
-            new = max(old + base * step_share * (np.exp(uplift * share) - 1.0), floor)
+            growth = base * step_share * (np.exp(uplift * share) - 1.0)
+            new = max(old + growth, floor)
+            # When the floor binds, its trips beyond the time share come off
+            # the pair's existing demand first; only what exceeds the whole
+            # base is new to rail. Otherwise a slow train, whose share
+            # collapses, books the floor as generated (case 195, R2).
+            old = new - max(growth, new - gross)
             label = "gravity_new_link"
         elif synthetic is None:
             return None, None, "insufficient_data"
@@ -1508,6 +1524,7 @@ def predict_demand(
                     else None
                 )
                 existing_trips = raw_trips
+                direction_factor = 1.0
                 # The ODM is exactly direction-symmetric, so without
                 # this the pair's two directions hold identical slot
                 # demand and the only directional signal left is the
@@ -1560,6 +1577,12 @@ def predict_demand(
                         / forward_cell
                     )
                     existing_trips = raw_trips * factor
+                    direction_factor = factor
+                # The pair's demand before choice changers leave it. They
+                # are computed with the candidate in the timetable, so a
+                # slow candidate can send nearly all of them off and leave
+                # a pair with real demand looking empty (case 196).
+                pair_trips = ((cell_trips or 0.0) + transfer) * direction_factor
 
                 generated = None
                 # A hindcast whose matrix saw the stripped trains
@@ -1635,6 +1658,7 @@ def predict_demand(
                         day,
                         period,
                         existing_trips=existing_trips or 0.0,
+                        pair_trips=pair_trips,
                         trains_in_period=existing_frequency,
                         trains_per_day=len(existing_od),
                         added_in_period=added_in_period,
