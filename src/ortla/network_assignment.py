@@ -109,6 +109,7 @@ def day_calls(calls: pd.DataFrame, reference_date: pd.Timestamp, weekday: str) -
     key = day[SERVICE_KEY].astype("string").fillna("<NA>")
     day["service"] = pd.factorize(pd.MultiIndex.from_frame(key))[0]
     day = day.sort_values(["service", "seq"], kind="stable").reset_index(drop=True)
+    day = _checked_calls(day, weekday)
 
     pattern = (
         day["crs"]
@@ -138,6 +139,42 @@ def day_calls(calls: pd.DataFrame, reference_date: pd.Timestamp, weekday: str) -
         day = day[~day["service"].isin(signature.index[repeat])]
         day["service"] = pd.factorize(day["service"])[0]
         day = day.reset_index(drop=True)
+    return day
+
+
+def _checked_calls(day: pd.DataFrame, weekday: str) -> pd.DataFrame:
+    """Drop calls repeated under one sequence number; warn on times running backwards.
+
+    ``day`` is sorted by service and sequence. A fall of under 12 hours from one call's
+    departure to the next call's arrival is a fault; a larger fall is a train running past
+    midnight.
+    """
+    repeated = day.duplicated(["service", "seq"]).to_numpy()
+    if repeated.any():
+        logger.warning(
+            "%s: %d calls repeat another call of their train (same sequence number); dropped.",
+            weekday,
+            int(repeated.sum()),
+        )
+        day = day[~repeated].reset_index(drop=True)
+    arrive, depart = cif_minutes(day["public_arrival"]), cif_minutes(day["public_departure"])
+    arrive, depart = (
+        np.where(np.isnan(arrive), depart, arrive),
+        np.where(np.isnan(depart), arrive, depart),
+    )
+    service = day["service"].to_numpy()
+    same = service[1:] == service[:-1]
+    step = arrive[1:] - depart[:-1]
+    back = same & (step < 0) & (step > -12 * 60)
+    if back.any():
+        uids = day["train_uid"].to_numpy()[1:][back] if "train_uid" in day else service[1:][back]
+        logger.warning(
+            "%s: %d trains have times running backwards between calls (%s); their legs"
+            " across the fault get no load.",
+            weekday,
+            len(set(service[1:][back])),
+            ", ".join(sorted({str(u) for u in uids})[:10]),
+        )
     return day
 
 

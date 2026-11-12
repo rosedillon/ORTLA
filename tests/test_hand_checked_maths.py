@@ -13,6 +13,7 @@ appraisal.
 
 from __future__ import annotations
 
+import itertools
 import math
 from types import SimpleNamespace
 
@@ -518,9 +519,29 @@ def test_new_link_takes_its_share_plus_the_step_or_the_median_floor():
     assert captured == pytest.approx(30 + 100 * (math.exp(0.084) - 1))
     assert generated == pytest.approx(100 * (math.exp(0.084) - 1))
     # Only 3 trains a day: no step, the median floor (33.3) beats the
-    # share (30).
+    # share (30). The floor's 3.3 extra come off the pair's 100 existing
+    # trips, so nothing is new to rail.
     captured, generated, _ = _leg(**{**first, "added_per_day": 3})
-    assert (captured, generated) == pytest.approx((50 / 1.5, 50 / 1.5 - 30))
+    assert (captured, generated) == pytest.approx((50 / 1.5, 0.0))
+    # With only 10 existing trips the floor (33.3) takes all 10 and
+    # generates the other 23.3.
+    captured, generated, _ = _leg(**{**first, "added_per_day": 3, "existing_trips": 10.0})
+    assert (captured, generated) == pytest.approx((50 / 1.5, 50 / 1.5 - 10))
+
+
+def test_a_slower_new_link_never_generates_more():
+    # Falling direct share as the new train slows (case 195, R2).
+    out = [
+        _leg(
+            trains_in_period=0,
+            trains_per_day=0,
+            added_per_day=4,
+            choice=_ChoiceTerms(direct_share=s),
+            new_link_uplift=0.28,
+        )[1]
+        for s in (0.9, 0.5, 0.2, 0.05)
+    ]
+    assert all(a >= b for a, b in itertools.pairwise(out))
 
 
 def test_no_observed_demand_uses_the_synthetic_prediction_and_after_cells_are_shared():
@@ -592,3 +613,18 @@ def test_crowding_multiplier_is_continuous_at_its_knots():
     for load, value in knots.items():
         assert ea._crowding_multiplier(load) == pytest.approx(value)
         assert ea._crowding_multiplier(load - 1e-9) == pytest.approx(value, abs=1e-6)
+
+
+def test_a_pair_whose_journeys_all_change_by_choice_is_not_treated_as_empty():
+    # The base nets to 0 (everyone changes) but the pair holds 100 trips:
+    # new-link branch, the median floor 33.3 is drawn from those 100.
+    captured, generated, label = _leg(
+        existing_trips=0.0,
+        pair_trips=100.0,
+        trains_in_period=0,
+        trains_per_day=0,
+        added_per_day=3,
+        choice=_ChoiceTerms(direct_share=0.01),
+    )
+    assert label == "gravity_new_link"
+    assert (captured, generated) == pytest.approx((50 / 1.5, 0.0))

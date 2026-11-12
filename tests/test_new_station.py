@@ -78,3 +78,35 @@ def test_borrowing_leans_on_near_stations_and_never_on_itself():
     lift = ns.borrow(weights, np.array([9.0, 1.0, 9.0]), 0.25)
     w = np.exp(-0.5)
     assert np.isclose(lift[0], w / (0.25 + w))
+
+
+def test_two_stations_at_one_point_share_the_catchment_equally():
+    attrs = {k: [0.0] * 12 for k in ("cat_f", "cctv", "car_spaces", "ticket_machine", "bus")}
+    stations = pd.DataFrame(
+        {
+            "e": [0.0, 0.0, *[1e7 + i for i in range(10)]],
+            "n": [0.0] * 12,
+            "freq": [50.0] * 12,
+            **attrs,
+        },
+        index=["AAA", "BBB", *[f"Z{i}" for i in range(10)]],
+    )
+    people = pd.DataFrame({"e": [300.0, -2000.0], "n": [0.0, 500.0], "pop": [60.0, 40.0]})
+    pop = ns.catchments(stations, people)
+    assert np.isclose(pop["AAA"], pop["BBB"])
+
+
+def test_warnings_flag_an_empty_place_and_inputs_past_the_calibration_stations():
+    cal = pd.DataFrame({"freq": [10.0, 200.0], "car_spaces": [0.0, 500.0]})
+    rows = pd.DataFrame({"freq": [64.0, 2000.0], "car_spaces": [100.0, 100000.0]})
+    notes = ns._warnings(rows, cal, np.array([False, True]), np.array([1e5, 2e7]), 1.5e6)
+    assert notes[0] == ""
+    assert "forecast 0" in notes[1] and "trains a day" in notes[1]
+    assert "car spaces" in notes[1] and "size domain" in notes[1]
+
+
+def test_frequency_disagreements_flag_beyond_factor_two():
+    ours = pd.Series({"DWN": 4.0, "LDS": 400.0, "HDW": 8.0, "XXX": 10.0})
+    sram = pd.Series({"DWN": 65.0, "LDS": 420.0, "HDW": 7.0})
+    bad = ns.frequency_disagreements(ours, sram)
+    assert list(bad.index) == ["DWN"]
