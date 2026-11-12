@@ -3,7 +3,7 @@
 The Station Demand Forecasting Tool predicts a new station's annual
 entries and exits without using that station's own outturn, which is
 exactly the non-circular footfall that
-``HindcastConfig.station_footfall`` needs for cases 01 and 05. Its two
+``HindcastConfig.station_footfall`` needs for new-station hindcasts. Its two
 fitted models between them take eight station attributes, and every one
 that is not derivable from the timetable comes from the National Rail
 Knowledgebase stations feed:
@@ -46,8 +46,10 @@ FEED_URL = (
     "1010-nationalrail-knowledgebase-stations-feed-_json_---production5_0/stations"
 )
 KEY_VARIABLE = "RDM_CONSUMER_KEY"
-DEFAULT_OUT = pathlib.Path(
-    "/Volumes/ENGG341/datasources/station-covariates/station_covariates.csv"
+DEFAULT_OUT = (
+    pathlib.Path(os.environ.get("ORTLA_DATA", "datasources"))
+    / "station-covariates"
+    / "station_covariates.csv"
 )
 # SDFT's station-choice model splits category F (the smallest, unstaffed
 # halts) from everything else. The feed carries staffing rather than the

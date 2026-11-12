@@ -10,8 +10,4 @@ source_odm: "/path/to/datasources/ODM_for_RDM_2024-25.csv"
 valid_stations: "/path/to/datasources/valid_stations.csv"
 
 chunk_size: 500000
-keep_columns:
-  - origin_tlc
-  - destination_tlc
-  - journeys
 fill_value: "!"

@@ -1,12 +1,12 @@
-"""Write the packaged slot share models from cases 33 and 117.
+"""Write the packaged slot share models from the research archive's fits.
 
-``slot_share_m3.json`` is case 33's timing table and theta 0.06;
-``slot_share_neural.json`` adds case 117's adopted network (H1, the fit
-on all rows, three seeds) with the station table it was trained on: km
+``slot_share_m3.json`` is the fitted timing table and theta 0.06;
+``slot_share_neural.json`` adds the adopted network (the fit on all rows,
+three seeds) with the station table it was trained on: km
 to London Bridge and log(1 + 2024-25 entries and exits). Needs PyTorch
 to read the fitted weights.
 
-    python3 scripts/export_slot_share_net.py /Volumes/ENGG341/cases
+    python3 scripts/export_slot_share_net.py /path/to/cases
 """
 
 from __future__ import annotations
@@ -52,7 +52,7 @@ def main(cases: pathlib.Path) -> None:
     SlotShareModel(
         timing=m3.timing,
         theta=m3.theta,
-        source="case 33 m3 timing and theta, case 117 H1 network (all rows, 3 seeds)",
+        source="m3 timing and theta, with the learned slot term fitted on all rows (3 seeds)",
         net=net,
     ).save(BUILTIN["neural"])
 

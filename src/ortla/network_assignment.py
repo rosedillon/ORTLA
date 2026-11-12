@@ -383,8 +383,8 @@ def one_leg_per_pair(legs: pd.DataFrame) -> pd.DataFrame:
     has two legs for some pairs. :func:`slot_trains` counts the train
     once for the pair, but each leg took the slot's D / n, so the train
     carried two shares (one of them the long way round) and the pair
-    more trips than its cell holds. Case 19 (PLAN.md addendum L1):
-    held-out rmse(log) 0.649 -> 0.646, 5/5 and 4/5 folds; loop trains'
+    more trips than its cell holds. Keeping one leg took held-out
+    rmse(log) 0.649 -> 0.646, 5/5 and 4/5 folds; loop trains'
     level 2.22 -> 1.96. Ties keep the earliest leg.
     """
     if legs.empty:
@@ -431,8 +431,8 @@ def drop_detour_legs(
     on one side, back on the other), which took an equal share of the
     slot beside the direct run the other way. A slot whose every leg is
     slow keeps them all, so no pair loses its trains. Codes are the
-    timetable's; a station without coordinates is never dropped. Case 19
-    (addendum L2): held-out 0.646 -> 0.633, r 0.72 -> 0.76, loop trains'
+    timetable's; a station without coordinates is never dropped. Held
+    out, rmse(log) 0.646 -> 0.633, r 0.72 -> 0.76, loop trains'
     level 1.96 -> 1.10.
     """
     if legs.empty:
@@ -494,30 +494,30 @@ class SlotShareModel:
         log w = -timing[period, departure half-hour, London-bound] -
         theta x minutes
 
-    * ``timing`` (case 17's E5): the mean within-group log error of each
+    * ``timing``: the mean within-group log error of each
       departure half-hour, by period and whether the train is
       London-bound, fitted on counted train-segments. Keys are
       ``"period|half_hour|0 or 1"``; a missing key is 0.
-    * ``theta`` (case 23's S3): a logit on the leg's in-train minutes,
+    * ``theta``: a logit on the leg's in-train minutes,
       so a fast train takes more of a slot it shares with a stopper.
       Only differences within a slot matter; a train with no time takes
       the slot's mean.
 
-    * an hourly term (case 39), when :meth:`with_profile` has attached
+    * an hourly term, when :meth:`with_profile` has attached
       an hourly OD profile: ``+ strength x log((S_h + k S) / ((1 + k)
       S))``, with ``S_h`` the leg's pair's profile demand in the hour
       the train leaves and ``S`` its mean hourly demand over the period.
       Pairs the profile does not cover get 0.
 
-    * a learned term ``g(x)`` (case 117), when the model file carries a
+    * a learned term ``g(x)``, when the model file carries a
       network (:mod:`ortla.slot_net`): it reads the train's place in its
       slot and its run, so :func:`slot_shares` needs the day's calls.
 
     All weights 1 is the equal share, ``1 / n``. Fitted on held-out
-    corridor folds in case 23 (``direction_split``-style JSON,
+    corridor folds (``direction_split``-style JSON,
     :meth:`load`/:meth:`save`). The models in :mod:`ortla.models` ship
-    with the package: ``m3`` (cases 23 and 33) and ``neural`` (``m3``
-    with case 117's network).
+    with the package: ``m3`` and ``neural`` (``m3`` with a learned
+    term).
     """
 
     timing: dict[str, float]
@@ -885,7 +885,7 @@ class ChangeRoutes:
 class PeriodChangeRoutes:
     """The best single change, by period, for pairs with no direct.
 
-    Case 17's T1. :class:`ChangeRoutes` routes a pair only if no train
+    :class:`ChangeRoutes` routes a pair only if no train
     links it all day, so a pair with direct trains in some periods loses
     its demand in the others (1-5% of most operators' pairs, 10% of
     GWR's): a branch whose through train runs once in the evening gets
@@ -896,8 +896,7 @@ class PeriodChangeRoutes:
     minimising ``T_p(o, v) + T_p(v, d) + H_p(v, d) / 2`` plus the change
     penalty, among vias whose riding time is within the detour limit,
     and its trips load both legs in ``p``. Ties keep the lowest station
-    index. Held out on corridors (case 17), rmse(log) 0.680 -> 0.654;
-    case 23 on the rebuilt matrices, see that case's RESULTS.
+    index. Held out on corridors, rmse(log) 0.680 -> 0.654.
     """
 
     def __init__(
@@ -1004,7 +1003,7 @@ class PeriodChangeRoutes:
         detour_base_minutes: float = 30.0,
         detour_minutes_per_km: float = 2.0,
     ) -> PeriodChangeRoutes:
-        """Case 88: some riders with a direct train change by choice.
+        """Route the riders with a direct train who change by choice.
 
         For each period and each pair with a direct train, the best
         change (picked as :meth:`route` picks it) costs
@@ -1012,7 +1011,7 @@ class PeriodChangeRoutes:
         direct train ``T(o, d) + H(o, d) / 2``, and the pair's share
         changing is ``1 / (1 + exp(theta * (change - direct)))``. Stored
         per period in ``choices`` as (origin, via, destination, share).
-        Held out by corridor (case 88), theta 0.2 took rmse(log) from
+        Held out by corridor, theta 0.2 took rmse(log) from
         0.492 to 0.481, better in every fold and for 7 of 9 operators.
         """
         o = self.stations.get_indexer(origins)
@@ -1185,14 +1184,14 @@ class TransferDemand:
     ``detour_base_minutes + detour_minutes_per_km`` x their
     straight-line km, and adds each route's period demand to both of its
     legs. :meth:`trips` is what a leg adds to its own cell before the
-    slot's demand is shared over its trains. It is case 16's fix 2,
-    which took held-out rmse(log) from 0.898 to 0.754 and the level from
+    slot's demand is shared over its trains. Routing one-change trips
+    took held-out rmse(log) from 0.898 to 0.754 and the level from
     0.69 to 0.84. ``routing="period"`` routes each period on its own
-    trains instead (:class:`PeriodChangeRoutes`, case 17's T1);
+    trains instead (:class:`PeriodChangeRoutes`);
     ``"day"`` is the original rule. ``scale`` multiplies every routed
     trip, and ``london_scale`` (when set) replaces it on trains that
-    start or end at a London terminal: case 33 found the routed volume
-    too low, by 2.30 on London trains and 1.20 on the rest (fitted with
+    start or end at a London terminal: on the counts the routed volume
+    was too low, by 2.30 on London trains and 1.20 on the rest (fitted with
     a journey-time slot share of theta 0.06). 1.0 and None reproduce
     earlier runs.
 
@@ -1226,7 +1225,7 @@ class TransferDemand:
         self.routing = routing
         self.scale = scale
         self.london_scale = scale if london_scale is None else london_scale
-        # Case 88: pairs with a direct train also change by choice
+        # Pairs with a direct train also change by choice
         # (PeriodChangeRoutes.choose); their moved trips ride the change
         # legs unscaled. None (the default) routes as before.
         self.choice_theta = choice_theta if routing == "period" else None

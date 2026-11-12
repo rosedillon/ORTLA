@@ -417,7 +417,7 @@ class AnalysisView(QWidget):
         try:
             data = self._current_data()
             model_cls.model_validate(data)
-            QMessageBox.information(self, "Config Valid", "✅ Configuration is valid.")
+            QMessageBox.information(self, "Config Valid", "Configuration is valid.")
             self.status_message.emit("Config valid")
         except Exception as exc:  # noqa: BLE001
             QMessageBox.warning(self, "Validation Error", str(exc))
@@ -474,7 +474,7 @@ class AnalysisView(QWidget):
         if status == "running":
             self.status_message.emit(f"Running {job.label}…")
         elif status == "done":
-            self._append_log(f"\n✅ Done in {job.elapsed:.1f}s.\n")
+            self._append_log(f"\nDone in {job.elapsed:.1f}s.\n")
             self._run_btn.setEnabled(True)
             self._run_btn.setText("  Run ▶")
             self.status_message.emit(f"{job.label} completed successfully.")
@@ -482,14 +482,14 @@ class AnalysisView(QWidget):
             self._populate_filters()
             self._render_outputs()
         elif status == "error":
-            self._append_log(f"\n❌ ERROR: {job.error_message}\n")
+            self._append_log(f"\nError: {job.error_message}\n")
             self._run_btn.setEnabled(True)
             self._run_btn.setText("  Run ▶")
             self.status_message.emit(f"{job.label} failed.")
             self.job_ended.emit(False)
             QMessageBox.critical(self, "Run Failed", job.error_message)
         elif status == "cancelled":
-            self._append_log("\n❌ Job cancelled by user.\n")
+            self._append_log("\nJob cancelled.\n")
             self._run_btn.setEnabled(True)
             self._run_btn.setText("  Run ▶")
             self.status_message.emit("Job cancelled.")

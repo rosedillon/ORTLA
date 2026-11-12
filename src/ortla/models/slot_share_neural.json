@@ -94,7 +94,7 @@
   "Unknown|47|1": 4.625929269271486e-17
  },
  "theta": 0.06,
- "source": "case 33 m3 timing and theta, case 117 H1 network (all rows, 3 seeds)",
+ "source": "m3 timing and theta, with the learned slot term fitted on all rows (3 seeds)",
  "net": {
   "features": [
    "dep_sin",

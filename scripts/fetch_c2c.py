@@ -16,12 +16,13 @@ from __future__ import annotations
 import datetime
 import hashlib
 import json
+import os
 import pathlib
 import sys
 import urllib.request
 
 ENV = pathlib.Path.home() / ".config" / "ortla" / "rdm.env"
-OUT = pathlib.Path("/Volumes/ENGG341/datasources/c2c-loading-data")
+OUT = pathlib.Path(os.environ.get("ORTLA_DATA", "datasources")) / "c2c-loading-data"
 
 
 def _env() -> dict[str, str]:
@@ -38,7 +39,10 @@ def main(out: pathlib.Path = OUT) -> None:
     env = _env()
     if not env["C2C_URL"].startswith("https://"):
         sys.exit("c2c: C2C_URL must be an https address")
-    headers = {"x-apikey": env["RDM_API_KEY"], "User-Agent": "ortla"}  # urllib's own agent gets 403
+    headers = {
+        "x-apikey": env["RDM_API_KEY"],
+        "User-Agent": "ortla",
+    }  # urllib's own agent gets 403
     request = urllib.request.Request(env["C2C_URL"], headers=headers)  # noqa: S310
     with urllib.request.urlopen(request, timeout=120) as response:  # noqa: S310 (https checked above)
         data = json.load(response)

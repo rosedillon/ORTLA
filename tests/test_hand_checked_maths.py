@@ -47,9 +47,7 @@ from ortla.od_matrix import build_odm_matrix, read_odm, rebalance_to_station_tot
 CUTOFFS = {"am_peak": "07:00", "interpeak": "09:30", "pm_peak": "16:00", "evening": "19:00"}
 
 
-# ----------------------------------------------------------------------
 # ODM build
-# ----------------------------------------------------------------------
 def test_odm_sums_repeated_pairs_strips_commas_and_maps_nlcs(tmp_path):
     (tmp_path / "odm.csv").write_text(
         "origin_tlc,destination_tlc,journeys\n"
@@ -86,9 +84,7 @@ def test_odm_sums_repeated_pairs_strips_commas_and_maps_nlcs(tmp_path):
     ]
 
 
-# ----------------------------------------------------------------------
 # Count readers: boardings from loads, averaging dated runs
-# ----------------------------------------------------------------------
 def _calls(loads, stations=("AAA", "BBB", "CCC", "DDD")):
     rows = []
     for seq, (crs, load) in enumerate(zip(stations, loads, strict=True)):
@@ -164,9 +160,7 @@ def test_dated_runs_average_to_one_row_with_their_sample_size():
     assert row["Sample Size"] == 2
 
 
-# ----------------------------------------------------------------------
 # Time periods and distance bands
-# ----------------------------------------------------------------------
 @pytest.mark.parametrize(
     ("clock", "period"),
     [
@@ -197,9 +191,7 @@ def test_distance_band_upper_limits_are_inclusive():
     assert vector.tolist() == got
 
 
-# ----------------------------------------------------------------------
 # Temporal factors and period matrices
-# ----------------------------------------------------------------------
 def _loading_config(tmp_path, mode="distance", min_rows=200):
     return SimpleNamespace(
         demand_column="Mean Passengers On",
@@ -290,9 +282,7 @@ def test_origin_profiles_are_added_beside_bands_fitted_to_every_row(tmp_path):
     assert f.loc[f["journey_type"].eq("commute"), "boardings"].sum() == 1100
 
 
-# ----------------------------------------------------------------------
 # Table 1410 rebalance
-# ----------------------------------------------------------------------
 def test_rebalance_matches_station_shares_symmetrically_and_keeps_the_total():
     # Four stations, every ordered pair 10 trips: 120 trips, each
     # marginal 60. Targets in shares 1/3, 1/3, 1/6, 1/6 of 240 -> 80,
@@ -331,9 +321,7 @@ def test_size_exponent_targets_shrink_the_gap_between_large_and_small_stations()
     assert station_targets({"A": 10_000, "B": 100}) == {"A": 10_000.0, "B": 100.0}
 
 
-# ----------------------------------------------------------------------
 # Legs, slot counts and loads
-# ----------------------------------------------------------------------
 def _day(trains):
     rows = []
     for service, (uid, stops) in enumerate(trains):
@@ -437,9 +425,7 @@ def test_change_route_picks_the_fastest_via_and_loads_both_legs():
     assert demand.sum() == 14
 
 
-# ----------------------------------------------------------------------
 # Gravity model and leg pricing
-# ----------------------------------------------------------------------
 GRAVITY = GravityModel(
     coefficients={
         "intercept": 1.0,
@@ -530,7 +516,7 @@ def test_new_link_takes_its_share_plus_the_step_or_the_median_floor():
 
 
 def test_a_slower_new_link_never_generates_more():
-    # Falling direct share as the new train slows (case 195, R2).
+    # Falling direct share as the new train slows.
     out = [
         _leg(
             trains_in_period=0,
@@ -557,9 +543,7 @@ def test_logit_share():
     assert _logit_share(20, 20, 0.1) == 0.5
 
 
-# ----------------------------------------------------------------------
 # Accuracy metrics
-# ----------------------------------------------------------------------
 def test_accuracy_metrics_by_hand():
     # Predictions 2, 4 and 6 against actuals 1, 4 and 8: errors 1, 0
     # and -2.
@@ -576,9 +560,7 @@ def test_accuracy_metrics_by_hand():
     assert m["pearson_r"] == pytest.approx(14 / math.sqrt(8 * 222 / 9))
 
 
-# ----------------------------------------------------------------------
 # Appraisal
-# ----------------------------------------------------------------------
 def test_commercial_npv_irr_and_payback_by_hand():
     # Build 2027 (-£1m), run 2028-29 at £1m revenue - £0.2m opex =
     # +£0.8m, 10%.

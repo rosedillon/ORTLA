@@ -48,7 +48,7 @@ def hourly_period_order() -> list[str]:
 def interval_time_cutoffs(minutes: int) -> dict[str, str]:
     """Cutoffs for equal periods of ``minutes`` from midnight, labelled ``HH:MM``.
 
-    Case 06: the five named periods explain 60.6% of the variation in
+    On nine operators' counts, the five named periods explain 60.6% of the variation in
     load by departure time within a corridor, half-hours 85.7% and the
     exact minute 87.4%, so 30 is the interval worth using.
     """
@@ -172,9 +172,13 @@ def cif_time_minutes(value: object) -> int | None:
     return int(text[:2]) * 60 + int(text[2:4])
 
 
-def cif_minutes(times: pd.Series) -> np.ndarray:
-    """Vectorised :func:`cif_time_minutes`, NaN where unreadable."""
-    digits = times.astype("string").fillna("").str.strip().str[:4]
+def cif_minutes(times: pd.Series, half_minutes: bool = False) -> np.ndarray:
+    """Vectorised :func:`cif_time_minutes`, NaN where unreadable.
+
+    With ``half_minutes``, a trailing ``H`` (the working timetable's half minute) adds 0.5.
+    """
+    text = times.astype("string").fillna("").str.strip()
+    digits = text.str[:4]
     ok = digits.str.fullmatch(r"\d{4}").fillna(value=False).to_numpy(dtype=bool)
     out = np.full(len(digits), np.nan)
     if ok.any():
@@ -182,6 +186,8 @@ def cif_minutes(times: pd.Series) -> np.ndarray:
         out[ok] = (
             picked.str[:2].astype(int).to_numpy() * 60 + picked.str[2:4].astype(int).to_numpy()
         )
+    if half_minutes:
+        out += np.where(text.str[4:5].eq("H").to_numpy(dtype=bool), 0.5, 0.0)
     return out
 
 

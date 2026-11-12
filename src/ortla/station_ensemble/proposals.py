@@ -289,7 +289,7 @@ def forecast(
             "region": net.region[n:],
         },
         index=new.index,
-    ).join(sources.to_lat_lon(new))
+    ).join(ns.lat_lon(new))
 
     km = np.sqrt(((sf.xy[:, None, :] - net.xy[None, n:, :]) ** 2).sum(-1)) / 1000
     near = np.flatnonzero((km <= neighbour_km).any(axis=1))

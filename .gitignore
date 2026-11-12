@@ -161,6 +161,7 @@ dmypy.json
 # All configs in the examples folder are included
 !examples/*.yml
 !reference/configs/*.yml
+!src/ortla/models/*.csv
 !.github/**/*.yml
 !.readthedocs.yaml
 !.codecov.yml

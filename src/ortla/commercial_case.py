@@ -32,9 +32,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-# ----------------------------------------------------------------------
 # Input / output data classes
-# ----------------------------------------------------------------------
 @dataclass
 class CommercialServiceInput:
     """One service (or service group) to appraise."""
@@ -120,9 +118,7 @@ class CommercialCaseResults:
         return (self.total_revenue_m - self.total_opex_m - self.total_capex_m) / self.total_capex_m
 
 
-# ----------------------------------------------------------------------
 # Core calculation functions
-# ----------------------------------------------------------------------
 def _demand_factor(params: CommercialCaseParameters, op_year: int) -> float:
     """Ramp-up times demand growth in operating year ``op_year``."""
     profile = params.demand_ramp_up_profile
@@ -318,9 +314,7 @@ def run_commercial_case(params: CommercialCaseParameters) -> CommercialCaseResul
     )
 
 
-# ----------------------------------------------------------------------
 # Sensitivity analysis
-# ----------------------------------------------------------------------
 def _run_sensitivity(
     base_params: CommercialCaseParameters,
     base_npv: float,
@@ -368,9 +362,7 @@ def _run_sensitivity(
     return cases
 
 
-# ----------------------------------------------------------------------
 # Public entry points
-# ----------------------------------------------------------------------
 def import_from_propose(propose_output_dir: pathlib.Path) -> list[CommercialServiceInput]:
     """Read the proposed services from an earlier ``propose`` run."""
     services = []

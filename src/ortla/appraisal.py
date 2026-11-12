@@ -260,9 +260,7 @@ def _crowding_multiplier(load_factor: float) -> float:
     return 1.90  # crush: no more riders fit
 
 
-# ----------------------------------------------------------------------
 # Input / output data classes
-# ----------------------------------------------------------------------
 @dataclass
 class AppraisalServiceInput:
     """One service (or service group) to appraise.
@@ -437,9 +435,7 @@ class AppraisalResults:
         return self.pvb / self.pvc
 
 
-# ----------------------------------------------------------------------
 # Core calculation functions
-# ----------------------------------------------------------------------
 def _annual_vot_benefits(
     params: AppraisalParameters,
     year: int,
@@ -833,9 +829,7 @@ def _aggregate_results(
     return benefits, costs
 
 
-# ----------------------------------------------------------------------
 # Public entry points
-# ----------------------------------------------------------------------
 def run_appraisal(params: AppraisalParameters) -> AppraisalResults:
     """Run the economic appraisal: PVB and PVC breakdowns, from which NPV and BCR follow."""
     logger.info(

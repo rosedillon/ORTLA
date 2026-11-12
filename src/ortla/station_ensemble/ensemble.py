@@ -73,7 +73,7 @@ def borrow(
     w = np.exp(-km / BORROW_KM)
     if same:
         np.fill_diagonal(w, 0.0)
-    return w @ residual / (BORROW_KAPPA + w.sum(1))
+    return ns.borrow(w, residual, BORROW_KAPPA)
 
 
 @dataclasses.dataclass

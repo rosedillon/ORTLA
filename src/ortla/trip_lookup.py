@@ -113,31 +113,6 @@ def lookup_trips_batch(
     return grids
 
 
-def lookup_trips(
-    origin_tlc: str,
-    destination_tlc: str,
-    matrices_dir: pathlib.Path | str,
-    day_order: list[str],
-    period_order: list[str],
-    fill_value: str = "!",
-) -> pd.DataFrame:
-    """Day x period grid of expected trips for one pair.
-
-    Missing combinations (Sunday ``early``) and pairs outside the valid set (``fill_value``) are
-    NaN.
-    """
-    norm_orig = origin_tlc.strip().upper()
-    norm_dest = destination_tlc.strip().upper()
-    batch = lookup_trips_batch(
-        [(norm_orig, norm_dest)],
-        matrices_dir,
-        day_order,
-        period_order,
-        fill_value,
-    )
-    return batch[(norm_orig, norm_dest)]
-
-
 def classify_journey_type(
     origin_tlc: str,
     destination_tlc: str,

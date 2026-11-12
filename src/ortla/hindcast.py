@@ -33,6 +33,7 @@ Outputs go to ``config.output_path``; see :func:`run_hindcast`.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 from collections import Counter
 from typing import TYPE_CHECKING
@@ -85,9 +86,7 @@ logger = logging.getLogger(__name__)
 _SCHEDULE_KEY = ["train_uid", "start_date", "end_date", "days_runs"]
 
 
-# ----------------------------------------------------------------------
 # 1. Strip
-# ----------------------------------------------------------------------
 def _schedules(calls: pd.DataFrame) -> pd.DataFrame:
     """One row per schedule with its ordered public calling pattern."""
     ordered = calls.assign(seq_n=pd.to_numeric(calls["seq"], errors="coerce")).sort_values(
@@ -169,9 +168,7 @@ def _runs_on(schedule: pd.Series, date: pd.Timestamp, day: str) -> bool:
     return start <= date <= end and len(bitmap) > idx and bitmap[idx] == "1"
 
 
-# ----------------------------------------------------------------------
 # 2. Rebuild as candidates
-# ----------------------------------------------------------------------
 def _date_for_day(reference_date: pd.Timestamp, day: str) -> pd.Timestamp:
     """Return the date of ``day`` in ``reference_date``'s week."""
     return reference_date + pd.Timedelta(days=WEEKDAY_INDEX[day] - reference_date.weekday())
@@ -709,7 +706,7 @@ def _warn_unroutable_stations(
 
     Connectivity is judged from the track graph's connected components
     rather than by routing every pair, which would be quadratic in the
-    number of called stations (case 5 calls at 100 of them).
+    number of called stations (one launched service calls at 100 of them).
     """
     if config.distance is None:
         return None  # a legacy-only config has no track graph to check against
@@ -759,9 +756,7 @@ def _warn_unroutable_stations(
     return calc
 
 
-# ----------------------------------------------------------------------
 # 4. Outturn
-# ----------------------------------------------------------------------
 def _outturn_tiploc_map(config: HindcastConfig) -> dict[str, str]:
     """TIPLOC -> CRS for the outturn reader, as for a loading run.
 
@@ -940,9 +935,7 @@ def compare_odm(
     return pd.concat(rows, ignore_index=True) if rows else table
 
 
-# ----------------------------------------------------------------------
 # Metrics
-# ----------------------------------------------------------------------
 def accuracy_metrics(predicted: pd.Series, actual: pd.Series) -> dict[str, float]:
     """Forecast accuracy measures for paired predictions and actuals."""
     mask = predicted.notna() & actual.notna()
@@ -970,9 +963,400 @@ def accuracy_metrics(predicted: pd.Series, actual: pd.Series) -> dict[str, float
     }
 
 
-# ----------------------------------------------------------------------
 # Driver
-# ----------------------------------------------------------------------
+@dataclasses.dataclass
+class _Strip:
+    """The timetable before and after the stripped trains, and what was taken out."""
+
+    calls: pd.DataFrame  # recoded, with every train
+    remaining: pd.DataFrame  # recoded, without the stripped trains or calls
+    schedules: pd.DataFrame
+    removed_calls: set[str]
+    crs_tiploc: dict[str, str]
+    train_tiplocs: dict[str, dict[str, str]]
+
+
+def _strip(config: HindcastConfig) -> _Strip:
+    """Take the service out of the timetable and write the timetable without it."""
+    out = config.output_path
+    raw_calls = read_public_calls(config.timetable_calls_path)
+    # Running times are looked up by each stop's own TIPLOC, so the map
+    # is taken before the timetable's second codes are rewritten.
+    crs_tiploc = crs_to_tiploc_map(raw_calls)
+    recodes = resolve_recodes(config.station_recodes)
+    calls = recode_columns(raw_calls, recodes, ["crs"])
+    rule = recode_strip_rule(config.strip, recodes)
+    schedules = select_schedules(calls, rule)
+    if schedules.empty:
+        raise ValueError(f"No schedules match the strip rule {rule!r}.")
+    schedules.to_csv(out / "hindcast_stripped_schedules.csv", index=False)
+    uids = set(schedules["train_uid"])
+    removed_calls = set(rule.remove_calls_at)
+    if removed_calls:
+        # Calls-only: the schedules keep running, without their stops at
+        # these stations. Legs that touch one are the new ground; legs
+        # that do not still see the candidate's own train in
+        # `remaining`, so their existing frequency is one too high
+        # (flagged per leg in hindcast_demand_by_leg).
+        at_target = calls["crs"].astype("string").str.strip().str.upper().isin(removed_calls)
+        remaining = calls[~(calls["train_uid"].isin(uids) & at_target)]
+    else:
+        remaining = calls[~calls["train_uid"].isin(uids)]
+    # Reusable by `propose`/`scenario` as a without-the-service
+    # timetable, so written with the raw codes they read (and recode)
+    # themselves.
+    raw_calls.loc[remaining.index].to_csv(out / "timetable_calls_stripped.csv", index=False)
+    # Each stripped train's own TIPLOCs, which the recoded stops (LSX
+    # now LST) would otherwise look up as the main station's.
+    own = calls.loc[calls["train_uid"].isin(uids), ["train_uid", "crs", "tiploc"]]
+    own = own.dropna().astype(str)
+    train_tiplocs = {
+        uid: dict(
+            zip(
+                group["crs"].str.strip().str.upper(),
+                group["tiploc"].str.strip().str.upper(),
+                strict=True,
+            )
+        )
+        for uid, group in own.groupby("train_uid")
+    }
+    logger.info(
+        "Stripped %d schedules (%d train UIDs, %d calls) from the timetable%s.",
+        len(schedules),
+        len(uids),
+        len(calls) - len(remaining),
+        f"; calls-only at {', '.join(sorted(removed_calls))}" if removed_calls else "",
+    )
+    return _Strip(calls, remaining, schedules, removed_calls, crs_tiploc, train_tiplocs)
+
+
+def _rebuild(
+    config: HindcastConfig, strip: _Strip, reference_date: pd.Timestamp
+) -> tuple[list[CandidateService], dict[str, float], TrackDistanceCalculator | None]:
+    """Rebuild the stripped trains as candidates and check every input they need.
+
+    Returns the candidates, any forecast footfall applied to their new stations, and the
+    track distance calculator (when the config has one).
+    """
+    out = config.output_path
+    candidates = build_candidates(
+        strip.schedules,
+        reference_date,
+        config.days,
+        config.traction_code,
+        config.default_capacity,
+    )
+    if not candidates:
+        raise ValueError(
+            f"None of the {strip.schedules['train_uid'].nunique()} stripped trains runs on "
+            f"{', '.join(config.days)} in the week of {reference_date.date()}."
+        )
+    logger.info("Rebuilt %d trains running on %s.", len(candidates), ", ".join(config.days))
+    forecast_footfall = apply_forecast_footfall(config, candidates)
+    if forecast_footfall:
+        pd.DataFrame(
+            sorted(forecast_footfall.items()), columns=["crs", "forecast_entries_exits"]
+        ).to_csv(out / "hindcast_forecast_footfall.csv", index=False)
+    _warn_missing_footfall(config, candidates)
+    calc = _warn_unroutable_stations(config, candidates)
+    _warn_missing_matrix_stations(config, candidates)
+    # Every destination column any leg or competing terminal will ask
+    # for, parsed once per matrix file rather than once per column.
+    aliases = resolve_aliases(config.station_aliases)
+    groups = (
+        config.destination_groups
+        if config.destination_groups is not None
+        else DEFAULT_DESTINATION_GROUPS
+    )
+    prefetch_matrix_columns(
+        config.period_matrices_dir,
+        {canonical_crs(s.station, aliases) for c in candidates for s in c.stops}
+        | {canonical_crs(code, aliases) for members in groups.values() for code in members},
+    )
+    pd.DataFrame(
+        [
+            {
+                "train_uid": c.name,
+                "days": " ".join(c.days_of_week),
+                "origin": c.stops[0].station,
+                "departure": c.stops[0].departure,
+                "destination": c.stops[-1].station,
+                "arrival": c.stops[-1].arrival,
+                "pattern": "-".join(s.station for s in c.stops),
+            }
+            for c in candidates
+        ]
+    ).to_csv(out / "hindcast_candidates.csv", index=False)
+    return candidates, forecast_footfall, calc
+
+
+Variant = tuple[str, str]  # (demand model, "marginal" or "joint")
+
+
+def _predict(
+    config: HindcastConfig,
+    strip: _Strip,
+    candidates: list[CandidateService],
+    reference_date: pd.Timestamp,
+    forecast_footfall: dict[str, float],
+    calc: TrackDistanceCalculator | None,
+) -> tuple[pd.DataFrame, pd.DataFrame, dict[Variant, list[pd.DataFrame]], list[Variant]]:
+    """Check each train's feasibility and predict its demand under every model and mode.
+
+    Returns the running-time and headway checks, the demand by leg for each variant, and
+    the variants.
+    """
+    graph = BplanTimingGraph(config.bplan_output_path)
+    try:
+        network_links = BplanNetworkLinks(config.bplan_output_path)
+    except FileNotFoundError:
+        network_links = None
+    fares = build_fares_context(config)
+    joint = _joint_counter(candidates, config.time_periods_cutoffs)
+    model_configs = {
+        name: config.model_copy(update={"demand_model": name}) for name in config.demand_models
+    }
+    gravities = {name: build_gravity_context(cfg, calc) for name, cfg in model_configs.items()}
+    # Routed on the full timetable (the one after the change), not on
+    # `remaining` (see TransferDemand).
+    transfers = transfer_demand(config, strip.calls, reference_date)
+    variants = [(name, mode) for name in config.demand_models for mode in ("marginal", "joint")]
+
+    running, headway = [], []
+    demand: dict[Variant, list[pd.DataFrame]] = {v: [] for v in variants}
+    for i, cand in enumerate(candidates, start=1):
+        logger.info("Hindcast train %d/%d: %s", i, len(candidates), cand.name)
+        cand_tiploc = {**strip.crs_tiploc, **strip.train_tiplocs.get(cand.name, {})}
+        running.append(check_running_times(cand, cand_tiploc, graph).assign(train_uid=cand.name))
+        headway.append(
+            check_headway(
+                config,
+                cand,
+                strip.remaining,
+                reference_date,
+                crs_tiploc=cand_tiploc,
+                network_links=network_links,
+            ).assign(train_uid=cand.name)
+        )
+        for name, mode in variants:
+            added = (
+                (lambda day, period, o, d, counts=joint: counts[(day, period, o, d)])
+                if mode == "joint"
+                else None
+            )
+            leg = predict_demand(
+                model_configs[name],
+                cand,
+                strip.remaining,
+                reference_date,
+                gravities[name],
+                fares,
+                added_trains=added,
+                transfers=transfers,
+            )
+            demand[(name, mode)].append(leg.assign(demand_model=name, mode=mode))
+
+    calibrated = gravities.get("calibrated")
+    if (
+        forecast_footfall
+        and config.forecast_footfall_weekday_share is not None
+        and calibrated is not None
+        and calibrated.model is not None
+    ):
+        factors, balance = balance_forecast_stations(
+            config, calibrated, candidates, strip.remaining, reference_date, forecast_footfall
+        )
+        balance.to_csv(config.output_path / "hindcast_station_balance.csv", index=False)
+        aliases = resolve_aliases(config.station_aliases)
+        for mode in ("marginal", "joint"):
+            if ("calibrated", mode) in demand:
+                demand[("calibrated", mode)] = [
+                    apply_station_balance(frame, factors, aliases)
+                    for frame in demand[("calibrated", mode)]
+                ]
+    if transfers is not None and transfers.summary:
+        pd.DataFrame(transfers.summary).to_csv(
+            config.output_path / "hindcast_transfer_routes.csv", index=False
+        )
+    return (
+        pd.concat(running, ignore_index=True),
+        pd.concat(headway, ignore_index=True),
+        demand,
+        variants,
+    )
+
+
+def _predicted_segments(
+    config: HindcastConfig,
+    candidates: list[CandidateService],
+    demand: dict[Variant, list[pd.DataFrame]],
+    variants: list[Variant],
+) -> tuple[pd.DataFrame, list[str]]:
+    """Every (train, day, segment) with each variant's predicted load, figure or not."""
+    key = ["train_uid", "day", "from_station", "to_station"]
+    predicted = pd.DataFrame(
+        [
+            {
+                "train_uid": cand.name,
+                "day": day,
+                "from_station": stop.station.strip().upper(),
+                "to_station": nxt.station.strip().upper(),
+                "capacity": cand.capacity or config.default_capacity,
+            }
+            for cand in candidates
+            for day in cand.days_of_week
+            for stop, nxt in zip(cand.stops, cand.stops[1:], strict=False)
+        ]
+    )
+    prediction_cols = []
+    for name, mode in variants:
+        col = f"predicted_load_{name}_{mode}"
+        prediction_cols.append(col)
+        frame = pd.concat(
+            [
+                estimate_loading(cand, leg, config)
+                for cand, leg in zip(candidates, demand[(name, mode)], strict=True)
+            ],
+            ignore_index=True,
+        )
+        if frame.empty:
+            predicted[col] = np.nan
+            continue
+        frame = frame.rename(
+            columns={
+                "candidate_name": "train_uid",
+                "on_board_typical_day": col,
+                "incomplete_estimate": f"incomplete_{name}_{mode}",
+            }
+        )[[*key, col, f"incomplete_{name}_{mode}"]]
+        predicted = predicted.merge(frame, on=key, how="left")
+    return predicted, prediction_cols
+
+
+def _odm_rows(
+    config: HindcastConfig,
+    demand_all: pd.DataFrame,
+    candidates: list[CandidateService],
+    remaining: pd.DataFrame,
+    reference_date: pd.Timestamp,
+) -> list[dict]:
+    """Score the predicted journeys against the ODM outturn, when one is configured."""
+    if config.outturn_odm is None:
+        return []
+    odm_table = compare_odm(config, demand_all, candidates, remaining, reference_date)
+    odm_table.to_csv(config.output_path / "hindcast_odm_pairs.csv", index=False)
+    rows = []
+    for (name, mode), grp in odm_table.groupby(["demand_model", "mode"]):
+        for subset, subset_rows in (
+            ("all_pairs", grp),
+            ("new_direct_links", grp[grp["new_direct_link"]]),
+            ("already_served", grp[~grp["new_direct_link"]]),
+        ):
+            for measure, pred, act in (
+                ("odm_journeys_after", "journeys_after_predicted", "journeys_after_actual"),
+                ("odm_increment", "predicted_increment", "actual_increment"),
+            ):
+                rows.append(
+                    {
+                        "case": config.case_name,
+                        "level": f"{measure}:{subset}",
+                        "demand_model": name,
+                        "demand_mode": mode,
+                        **accuracy_metrics(subset_rows[pred], subset_rows[act]),
+                    }
+                )
+    return rows
+
+
+def _load_rows(
+    config: HindcastConfig,
+    segments: pd.DataFrame,
+    trains: pd.DataFrame,
+    variants: list[Variant],
+) -> list[dict]:
+    """Score each variant's loads on segments and on trains, on two bases.
+
+    ``all_rows`` includes rows whose predicted load is a lower bound (some leg was
+    unpredictable), which drags predicted load toward zero and makes the error look like a
+    model result when it is really coverage. ``complete_only`` is the accuracy of the model
+    where it actually ran. Quote ``complete_only``, with ``pct_incomplete`` beside it.
+    """
+    rows = []
+    for level, frame in (("segment", segments), ("train", trains)):
+        for name, mode in variants:
+            predicted_col = frame[f"predicted_load_{name}_{mode}"]
+            actual_col = frame["actual_load"]
+            inc_col = f"incomplete_{name}_{mode}"
+            incomplete = (
+                frame[inc_col].fillna(value=False).astype(bool)
+                if inc_col in frame.columns
+                else pd.Series(False, index=frame.index)
+            )
+            base = {
+                "case": config.case_name,
+                "level": level,
+                "demand_model": name,
+                "demand_mode": mode,
+            }
+            rows.append(
+                {
+                    **base,
+                    "basis": "all_rows",
+                    "n_incomplete": int(incomplete.sum()),
+                    "pct_incomplete": (
+                        round(float(incomplete.mean() * 100), 1) if len(frame) else np.nan
+                    ),
+                    **accuracy_metrics(predicted_col, actual_col),
+                }
+            )
+            rows.append(
+                {
+                    **base,
+                    "basis": "complete_only",
+                    "n_incomplete": 0,
+                    "pct_incomplete": 0.0,
+                    **accuracy_metrics(predicted_col[~incomplete], actual_col[~incomplete]),
+                }
+            )
+    return rows
+
+
+def _feasibility_row(
+    config: HindcastConfig,
+    candidates: list[CandidateService],
+    running: pd.DataFrame,
+    headway: pd.DataFrame,
+) -> dict:
+    """Summarise the running-time and headway checks in one summary row."""
+    n_legs = len(running)
+    infeasible = running.get("status") == "infeasible"
+    row = {
+        "case": config.case_name,
+        "level": "feasibility",
+        "n_trains": len(candidates),
+        "running_time_legs": n_legs,
+        "running_time_infeasible": int(infeasible.sum()) if n_legs else 0,
+        "running_time_unverifiable": int((running.get("status") == "unverifiable").sum())
+        if n_legs
+        else 0,
+        "headway_evaluations": len(headway),
+        "headway_conflicts": int(headway["conflict"].sum()) if len(headway) else 0,
+        "trains_flagged_any": len(
+            set(running.loc[infeasible, "train_uid"])
+            | set(headway.loc[headway["conflict"].astype(bool), "train_uid"])
+        )
+        if n_legs
+        else 0,
+    }
+    if len(headway):
+        nearest = headway[["gap_before_minutes", "gap_after_minutes"]].min(axis=1)
+        row["headway_conflicts_fixed_mode"] = int(
+            (nearest < config.planning_headway_minutes).sum()
+        )
+        row["planning_headway_minutes"] = config.planning_headway_minutes
+    return row
+
+
 def run_hindcast(config: HindcastConfig) -> None:
     """Strip, rebuild, predict and compare; see the module docstring.
 
@@ -998,262 +1382,32 @@ def run_hindcast(config: HindcastConfig) -> None:
     reference_date = pd.Timestamp(config.reference_date)
     _require_demand_inputs(config)
 
-    raw_calls = read_public_calls(config.timetable_calls_path)
-    # Running times are looked up by each stop's own TIPLOC, so the map
-    # is taken before the timetable's second codes are rewritten.
-    crs_tiploc = crs_to_tiploc_map(raw_calls)
-    recodes = resolve_recodes(config.station_recodes)
-    calls = recode_columns(raw_calls, recodes, ["crs"])
-    rule = recode_strip_rule(config.strip, recodes)
-    stripped_schedules = select_schedules(calls, rule)
-    if stripped_schedules.empty:
-        raise ValueError(f"No schedules match the strip rule {rule!r}.")
-    stripped_schedules.to_csv(out / "hindcast_stripped_schedules.csv", index=False)
-    stripped_uids = set(stripped_schedules["train_uid"])
-    removed_calls = set(rule.remove_calls_at)
-    if removed_calls:
-        # Calls-only: the schedules keep running, without their stops at
-        # these stations. Legs that touch one are the new ground; legs
-        # that do not still see the candidate's own train in
-        # `remaining`, so their existing frequency is one too high
-        # (flagged per leg in hindcast_demand_by_leg).
-        at_target = calls["crs"].astype("string").str.strip().str.upper().isin(removed_calls)
-        remaining = calls[~(calls["train_uid"].isin(stripped_uids) & at_target)]
-    else:
-        remaining = calls[~calls["train_uid"].isin(stripped_uids)]
-    # Reusable by `propose`/`scenario` as a without-the-service
-    # timetable, so written with the raw codes they read (and recode)
-    # themselves.
-    raw_calls.loc[remaining.index].to_csv(out / "timetable_calls_stripped.csv", index=False)
-    # Each stripped train's own TIPLOCs, which the recoded stops (LSX
-    # now LST) would otherwise look up as the main station's.
-    own = calls.loc[calls["train_uid"].isin(stripped_uids), ["train_uid", "crs", "tiploc"]]
-    own = own.dropna().astype(str)
-    train_tiplocs = {
-        uid: dict(
-            zip(
-                group["crs"].str.strip().str.upper(),
-                group["tiploc"].str.strip().str.upper(),
-                strict=True,
-            )
-        )
-        for uid, group in own.groupby("train_uid")
-    }
-    logger.info(
-        "Stripped %d schedules (%d train UIDs, %d calls) from the timetable%s.",
-        len(stripped_schedules),
-        len(stripped_uids),
-        len(calls) - len(remaining),
-        f"; calls-only at {', '.join(sorted(removed_calls))}" if removed_calls else "",
+    strip = _strip(config)
+    candidates, forecast_footfall, calc = _rebuild(config, strip, reference_date)
+    running, headway, demand, variants = _predict(
+        config, strip, candidates, reference_date, forecast_footfall, calc
     )
-
-    candidates = build_candidates(
-        stripped_schedules,
-        reference_date,
-        config.days,
-        config.traction_code,
-        config.default_capacity,
-    )
-    if not candidates:
-        raise ValueError(
-            f"None of the {len(stripped_uids)} stripped trains runs on "
-            f"{', '.join(config.days)} in the week of {reference_date.date()}."
-        )
-    logger.info("Rebuilt %d trains running on %s.", len(candidates), ", ".join(config.days))
-    forecast_footfall = apply_forecast_footfall(config, candidates)
-    if forecast_footfall:
-        pd.DataFrame(
-            sorted(forecast_footfall.items()), columns=["crs", "forecast_entries_exits"]
-        ).to_csv(out / "hindcast_forecast_footfall.csv", index=False)
-    _warn_missing_footfall(config, candidates)
-    calc = _warn_unroutable_stations(config, candidates)
-    _warn_missing_matrix_stations(config, candidates)
-    # Every destination column any leg or competing terminal will ask
-    # for, parsed once per matrix file rather than once per column.
-    aliases = resolve_aliases(config.station_aliases)
-    prefetch_matrix_columns(
-        config.period_matrices_dir,
-        {canonical_crs(s.station, aliases) for c in candidates for s in c.stops}
-        | {
-            canonical_crs(code, aliases)
-            for members in (
-                config.destination_groups
-                if config.destination_groups is not None
-                else DEFAULT_DESTINATION_GROUPS
-            ).values()
-            for code in members
-        },
-    )
-    pd.DataFrame(
-        [
-            {
-                "train_uid": c.name,
-                "days": " ".join(c.days_of_week),
-                "origin": c.stops[0].station,
-                "departure": c.stops[0].departure,
-                "destination": c.stops[-1].station,
-                "arrival": c.stops[-1].arrival,
-                "pattern": "-".join(s.station for s in c.stops),
-            }
-            for c in candidates
-        ]
-    ).to_csv(out / "hindcast_candidates.csv", index=False)
-
-    graph = BplanTimingGraph(config.bplan_output_path)
-    try:
-        network_links = BplanNetworkLinks(config.bplan_output_path)
-    except FileNotFoundError:
-        network_links = None
-    fares = build_fares_context(config)
-    joint = _joint_counter(candidates, config.time_periods_cutoffs)
-    model_configs = {
-        name: config.model_copy(update={"demand_model": name}) for name in config.demand_models
-    }
-    gravities = {name: build_gravity_context(cfg, calc) for name, cfg in model_configs.items()}
-    # Routed on the full timetable (the one after the change), not on
-    # `remaining` (see TransferDemand).
-    transfers = transfer_demand(config, calls, reference_date)
-    variants = [(name, mode) for name in config.demand_models for mode in ("marginal", "joint")]
-
-    running, headway = [], []
-    demand: dict[tuple[str, str], list[pd.DataFrame]] = {v: [] for v in variants}
-    loading: dict[tuple[str, str], list[pd.DataFrame]] = {v: [] for v in variants}
-    for i, cand in enumerate(candidates, start=1):
-        logger.info("Hindcast train %d/%d: %s", i, len(candidates), cand.name)
-        cand_tiploc = {**crs_tiploc, **train_tiplocs.get(cand.name, {})}
-        running.append(check_running_times(cand, cand_tiploc, graph).assign(train_uid=cand.name))
-        headway.append(
-            check_headway(
-                config,
-                cand,
-                remaining,
-                reference_date,
-                crs_tiploc=cand_tiploc,
-                network_links=network_links,
-            ).assign(train_uid=cand.name)
-        )
-        for name, mode in variants:
-            added = (
-                (lambda day, period, o, d, counts=joint: counts[(day, period, o, d)])
-                if mode == "joint"
-                else None
-            )
-            leg = predict_demand(
-                model_configs[name],
-                cand,
-                remaining,
-                reference_date,
-                gravities[name],
-                fares,
-                added_trains=added,
-                transfers=transfers,
-            )
-            demand[(name, mode)].append(leg.assign(demand_model=name, mode=mode))
-
-    calibrated = gravities.get("calibrated")
-    if (
-        forecast_footfall
-        and config.forecast_footfall_weekday_share is not None
-        and calibrated is not None
-        and calibrated.model is not None
-    ):
-        factors, balance = balance_forecast_stations(
-            config, calibrated, candidates, remaining, reference_date, forecast_footfall
-        )
-        balance.to_csv(out / "hindcast_station_balance.csv", index=False)
-        aliases = resolve_aliases(config.station_aliases)
-        for mode in ("marginal", "joint"):
-            if ("calibrated", mode) in demand:
-                demand[("calibrated", mode)] = [
-                    apply_station_balance(frame, factors, aliases)
-                    for frame in demand[("calibrated", mode)]
-                ]
-    for variant, frames in demand.items():
-        loading[variant] = [
-            estimate_loading(cand, frame, config)
-            for cand, frame in zip(candidates, frames, strict=True)
-        ]
-
-    if transfers is not None and transfers.summary:
-        pd.DataFrame(transfers.summary).to_csv(out / "hindcast_transfer_routes.csv", index=False)
-    running_df = pd.concat(running, ignore_index=True)
-    headway_df = pd.concat(headway, ignore_index=True)
-    running_df.to_csv(out / "hindcast_running_times.csv", index=False)
-    headway_df.to_csv(out / "hindcast_headway.csv", index=False)
-    demand_by_leg = pd.concat([f for v in variants for f in demand[v]], ignore_index=True)
-    if removed_calls:
+    running.to_csv(out / "hindcast_running_times.csv", index=False)
+    headway.to_csv(out / "hindcast_headway.csv", index=False)
+    demand_all = pd.concat([f for v in variants for f in demand[v]], ignore_index=True)
+    demand_by_leg = demand_all.copy()
+    if strip.removed_calls:
         # In calls-only mode only these legs are the new ground; the
         # rest keep their own train in the before-network and are not
         # part of the test.
         demand_by_leg["leg_is_new_ground"] = demand_by_leg["from_station"].isin(
-            removed_calls
-        ) | demand_by_leg["to_station"].isin(removed_calls)
+            strip.removed_calls
+        ) | demand_by_leg["to_station"].isin(strip.removed_calls)
     demand_by_leg.to_csv(out / "hindcast_demand_by_leg.csv", index=False)
 
-    # Every (train, day, segment), whether or not a model produced a
-    # figure for it.
-    key = ["train_uid", "day", "from_station", "to_station"]
-    predicted = pd.DataFrame(
-        [
-            {
-                "train_uid": cand.name,
-                "day": day,
-                "from_station": stop.station.strip().upper(),
-                "to_station": nxt.station.strip().upper(),
-                "capacity": cand.capacity or config.default_capacity,
-            }
-            for cand in candidates
-            for day in cand.days_of_week
-            for stop, nxt in zip(cand.stops, cand.stops[1:], strict=False)
-        ]
-    )
-    prediction_cols = []
-    for name, mode in variants:
-        col = f"predicted_load_{name}_{mode}"
-        prediction_cols.append(col)
-        frame = pd.concat(loading[(name, mode)], ignore_index=True)
-        if frame.empty:
-            predicted[col] = np.nan
-            continue
-        frame = frame.rename(
-            columns={
-                "candidate_name": "train_uid",
-                "on_board_typical_day": col,
-                "incomplete_estimate": f"incomplete_{name}_{mode}",
-            }
-        )[[*key, col, f"incomplete_{name}_{mode}"]]
-        predicted = predicted.merge(frame, on=key, how="left")
-
-    demand_all = pd.concat([f for v in variants for f in demand[v]], ignore_index=True)
-    odm_rows = []
-    if config.outturn_odm is not None:
-        odm_table = compare_odm(config, demand_all, candidates, remaining, reference_date)
-        odm_table.to_csv(out / "hindcast_odm_pairs.csv", index=False)
-        for (name, mode), grp in odm_table.groupby(["demand_model", "mode"]):
-            for subset, subset_rows in (
-                ("all_pairs", grp),
-                ("new_direct_links", grp[grp["new_direct_link"]]),
-                ("already_served", grp[~grp["new_direct_link"]]),
-            ):
-                for measure, pred, act in (
-                    ("odm_journeys_after", "journeys_after_predicted", "journeys_after_actual"),
-                    ("odm_increment", "predicted_increment", "actual_increment"),
-                ):
-                    odm_rows.append(
-                        {
-                            "case": config.case_name,
-                            "level": f"{measure}:{subset}",
-                            "demand_model": name,
-                            "demand_mode": mode,
-                            **accuracy_metrics(subset_rows[pred], subset_rows[act]),
-                        }
-                    )
-
+    predicted, prediction_cols = _predicted_segments(config, candidates, demand, variants)
+    odm_rows = _odm_rows(config, demand_all, candidates, strip.remaining, reference_date)
     if config.outturn is None:
         pd.DataFrame(odm_rows).to_csv(out / "hindcast_summary.csv", index=False)
         logger.info("Hindcast summary:\n%s", pd.DataFrame(odm_rows).to_string(index=False))
         return
-    outturn = load_outturn(config, candidates, stripped_schedules)
+
+    outturn = load_outturn(config, candidates, strip.schedules)
     segments = predicted.merge(outturn, on=["train_uid", "day", "from_station"], how="left")
     if config.outturn.screen_count_resets:
         segments, screened = screen_count_resets(segments, config.outturn.count_reset_min_load)
@@ -1264,9 +1418,9 @@ def run_hindcast(config: HindcastConfig) -> None:
         lambda t: classify_time_period(f"{t}:00", config.time_periods_cutoffs) if t else None
     )
     # A segment fed by any leg the model could not predict is a lower
-    # bound, not an estimate (see `estimate_loading`). Normalise the
-    # flags so they survive the merge above as real booleans rather than
-    # NaN.
+    # bound, not an estimate (see `estimate_loading`). The merge above
+    # leaves the flags NaN where a variant has no figure; make them
+    # booleans.
     incomplete_cols = [
         f"incomplete_{name}_{mode}"
         for name, mode in variants
@@ -1288,77 +1442,8 @@ def run_hindcast(config: HindcastConfig) -> None:
     )
     trains.to_csv(out / "hindcast_trains.csv", index=False)
 
-    rows = []
-    for level, frame in (("segment", segments), ("train", trains)):
-        for name, mode in variants:
-            predicted_col = frame[f"predicted_load_{name}_{mode}"]
-            actual_col = frame["actual_load"]
-            inc_col = f"incomplete_{name}_{mode}"
-            incomplete = (
-                frame[inc_col].fillna(value=False).astype(bool)
-                if inc_col in frame.columns
-                else pd.Series(False, index=frame.index)
-            )
-            base = {
-                "case": config.case_name,
-                "level": level,
-                "demand_model": name,
-                "demand_mode": mode,
-            }
-            # Two bases, because they answer different questions.
-            # `all_rows` includes rows whose predicted load is a lower
-            # bound (some leg was unpredictable), which drags predicted
-            # load toward zero and makes the error look like a model
-            # result when it is really coverage. `complete_only` is the
-            # accuracy of the model where it actually ran. Quote
-            # `complete_only`, and quote `pct_incomplete` beside it.
-            rows.append(
-                {
-                    **base,
-                    "basis": "all_rows",
-                    "n_incomplete": int(incomplete.sum()),
-                    "pct_incomplete": (
-                        round(float(incomplete.mean() * 100), 1) if len(frame) else np.nan
-                    ),
-                    **accuracy_metrics(predicted_col, actual_col),
-                }
-            )
-            rows.append(
-                {
-                    **base,
-                    "basis": "complete_only",
-                    "n_incomplete": 0,
-                    "pct_incomplete": 0.0,
-                    **accuracy_metrics(predicted_col[~incomplete], actual_col[~incomplete]),
-                }
-            )
-    n_legs = len(running_df)
-    feasibility = {
-        "case": config.case_name,
-        "level": "feasibility",
-        "n_trains": len(candidates),
-        "running_time_legs": n_legs,
-        "running_time_infeasible": int((running_df.get("status") == "infeasible").sum())
-        if n_legs
-        else 0,
-        "running_time_unverifiable": int((running_df.get("status") == "unverifiable").sum())
-        if n_legs
-        else 0,
-        "headway_evaluations": len(headway_df),
-        "headway_conflicts": int(headway_df["conflict"].sum()) if len(headway_df) else 0,
-        "trains_flagged_any": len(
-            set(running_df.loc[running_df.get("status") == "infeasible", "train_uid"])
-            | set(headway_df.loc[headway_df["conflict"].astype(bool), "train_uid"])
-        )
-        if n_legs
-        else 0,
-    }
-    if len(headway_df):
-        nearest = headway_df[["gap_before_minutes", "gap_after_minutes"]].min(axis=1)
-        fixed = nearest < config.planning_headway_minutes
-        feasibility["headway_conflicts_fixed_mode"] = int(fixed.sum())
-        feasibility["planning_headway_minutes"] = config.planning_headway_minutes
-    rows.append(feasibility)
+    rows = _load_rows(config, segments, trains, variants)
+    rows.append(_feasibility_row(config, candidates, running, headway))
     rows.extend(odm_rows)
     summary = pd.DataFrame(rows)
     summary.to_csv(out / "hindcast_summary.csv", index=False)

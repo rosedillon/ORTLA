@@ -584,7 +584,7 @@ def test_new_direct_link_captures_only_its_logit_share() -> None:
 
 
 def test_a_first_direct_link_grows_the_pair_by_the_measured_step() -> None:
-    # Case 24: a pair gaining >= 4 direct trains a day grows by
+    # A pair gaining >= 4 direct trains a day grows by
     # exp(uplift), scaled by the share the direct route wins; the growth
     # is generated.
     choice = demand.ChoiceTerms(direct_share=0.5)
@@ -631,7 +631,7 @@ def test_a_first_direct_link_grows_the_pair_by_the_measured_step() -> None:
 
 
 def test_the_scan_ranks_corridors_on_their_observed_market() -> None:
-    # Case 24: an unserved pair already has a market by other routes.
+    # An unserved pair already has a market by other routes.
     # Each corridor once, ranked on it; a pair with no flow, or off the
     # matrices, is out.
     from ortla.config import RouteTypeConfig
@@ -828,7 +828,7 @@ def test_leave_one_out_on_an_in_sample_cell_returns_the_national_share() -> None
 
 def test_new_link_floor_options() -> None:
     # Cell 55, the link wins all of it; the gravity prediction is 16,000
-    # (VIC -> LBG early in case 20) with a smearing factor of 2.9.
+    # (VIC -> LBG early in the day) with a smearing factor of 2.9.
     model = dataclasses.replace(_gravity().model, smearing=2.9)
     gravity = types.SimpleNamespace(
         model=model, synthetic_slot_trips=lambda *a, **k: (16000.0, "x")
@@ -1009,8 +1009,7 @@ def tmp_matrix() -> pathlib.Path:
     return path
 
 
-# --- directional demand split
-# ---------------------------------------------
+# Directional demand split
 
 
 def _flat_split(intercept: float = 0.0, slope: float = 0.0):

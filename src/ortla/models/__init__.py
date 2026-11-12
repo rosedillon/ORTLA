@@ -1,10 +1,10 @@
 """Fitted models that ship with ORTLA, usable by name in a config.
 
-* ``m3``: the slot share of cases 23 and 33, departure half-hour timing
+* ``m3``: the slot share by departure half-hour timing
   and theta 0.06 per in-train minute;
-* ``neural``: ``m3`` with case 117's network (:mod:`ortla.slot_net`);
+* ``neural``: ``m3`` with a learned term (:mod:`ortla.slot_net`);
 * ``national``: the direction split fitted on every counted operator
-  (case 16's national fit).
+  (the national base-year fit).
 """
 
 from __future__ import annotations

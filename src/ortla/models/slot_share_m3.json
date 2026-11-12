@@ -94,5 +94,5 @@
   "Unknown|47|1": 4.625929269271486e-17
  },
  "theta": 0.06,
- "source": "case 33 (cases_local/33_corridor_mechanisms): case 23 S2 timing bins plus journey-time choice theta 0.06 per minute, fitted jointly with transfer_scale 1.55 on 474195 segments, June 2026 timetable, _baselines_size matrices (M3; use with transfer_scale 1.55)"
+ "source": "departure half-hour timing bins plus journey-time choice theta 0.06 per minute, fitted jointly with the transfer scales on 474195 counted segments, June 2026 timetable, size-corrected matrices"
 }
