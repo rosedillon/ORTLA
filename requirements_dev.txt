@@ -10,4 +10,4 @@ pytest-cov>=5.0
 pytest-xdist>=3.8.0
 
 # edit_install
-versioningit>=3.1
+versioningit>=3.3.0
