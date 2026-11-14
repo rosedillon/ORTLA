@@ -12,7 +12,7 @@ tqdm>=4.66
 openpyxl>=3.1
 # Interactive route maps (distance's map_output) through geopandas' explore().
 folium>=0.15
-matplotlib>=3.8
+matplotlib>=3.11.2
 mapclassify>=2.6
 # Reads the SRAM hourly profile when it is a parquet file.
 pyarrow>=15
