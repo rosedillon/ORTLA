@@ -7,10 +7,10 @@ with the same borrowing.
 
 | | Cross-validated, 1,799 stations | 69 openings, 1998-2023 |
 | --- | ---: | ---: |
-| rmse(log) | 0.526 | 0.440 |
+| rmse(log) | 0.521 | 0.440 |
 | Median forecast / actual | | 0.94 |
 | Within a factor of 2 | | 0.84 |
-| 80% interval, typical width; coverage | | x/1.78; 0.77 |
+| 80% interval, typical width; coverage | | x/1.77; 0.75 |
 
 These are the scores `station_ensemble_scores.csv` reports (row `ensemble`).
 
@@ -38,7 +38,10 @@ the same forecast scores 0.585.
    footfall target. Kriging alone is the thirteenth.
 5. Ensemble (`ensemble.py`). The plain mean of the thirteen, plus the in-sample residuals of
    established stations, weighted exp(-km / 4) and shrunk by 0.5. The interval comes from the
-   cross-validated errors in the forecast's size fifth.
+   cross-validated errors in the forecast's size fifth. In those errors each held-out station
+   borrows from every neighbour, with residuals from the fold's own fits, so no model has seen
+   it; that matches how an opening is forecast. Checked across folds, the 80% interval covers
+   0.79 of established stations, but 0.68 near London.
 
 Proposed stations (`proposals.py`) are added to the network as the config describes them, and
 every term is rebuilt with them open. Their neighbours' forecasts with and without them are

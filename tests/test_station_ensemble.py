@@ -68,6 +68,9 @@ def test_borrowing_leaves_a_station_out_of_its_own_adjustment() -> None:
     )
     far = ensemble.borrow(r, xy, np.array([[500_000.0, 0.0]]))
     assert far == pytest.approx([0.0], abs=1e-12)
+    # A subset of the pool leaves out its own rows the same way.
+    sub = ensemble.borrow(r, xy, xy[[0, 2]], exclude=np.array([0, 2]))
+    assert sub == pytest.approx(own[[0, 2]])
 
 
 def test_car_catchment_shares_every_car_once() -> None:

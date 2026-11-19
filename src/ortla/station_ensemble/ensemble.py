@@ -7,6 +7,13 @@ fitted set, then once on all of it. The ensemble is the plain mean of the thirte
 Borrowing adds the in-sample residuals of established stations nearby, weighted
 exp(-km / 4) and shrunk by kappa 0.5. The 80% interval is the 80th percentile of the absolute
 cross-validated error after borrowing, taken separately for each fifth of forecast size.
+
+In that cross-validated error a held-out station borrows from every neighbour, with residuals
+from the fold's own fits, so no model has seen the station. That is how an opening is
+forecast. Borrowing residuals from the fit on every station instead (the scheme before
+12 November 2026) pulls neighbours' residuals towards the held-out station: it is pessimistic
+(rmse 0.5257 against 0.5207) and gives intervals about 0.3% wider. Borrowing only from other
+folds' neighbours (0.5496) has less to borrow than an opening has.
 """
 
 from __future__ import annotations
@@ -63,16 +70,24 @@ class Cache:
 
 
 def borrow(
-    residual: np.ndarray, pool_xy: np.ndarray, xy: np.ndarray, same: bool = False
+    residual: np.ndarray,
+    pool_xy: np.ndarray,
+    xy: np.ndarray,
+    same: bool = False,
+    exclude: np.ndarray | None = None,
 ) -> np.ndarray:
     """Average neighbours' residuals, weighted exp(-km / 4) and shrunk by kappa.
 
     With ``same``, the pool is the stations themselves and each one's own residual is left out.
+    ``exclude`` does the same when the stations are a subset of the pool: row i leaves out pool
+    member ``exclude[i]``.
     """
     km = np.sqrt(((xy[:, None, :] - pool_xy[None, :, :]) ** 2).sum(-1)) / 1000
     w = np.exp(-km / BORROW_KM)
     if same:
         np.fill_diagonal(w, 0.0)
+    if exclude is not None:
+        w[np.arange(len(xy)), exclude] = 0.0
     return ns.borrow(w, residual, BORROW_KAPPA)
 
 
@@ -93,6 +108,7 @@ class Model:
     places: terms.Places
     cv: dict[str, np.ndarray]  # out-of-fold forecast, by member and for the ensemble
     full: dict[str, np.ndarray]  # fitted on every wide station, by member and for the ensemble
+    folds: dict[str, list[np.ndarray]]  # each fold's fit, forecast for every station
 
     @property
     def wide(self) -> np.ndarray:
@@ -111,10 +127,18 @@ class Model:
         return self.full[key][positions] + borrow(self.residual(key), self.sf.xy[self.wide], xy)
 
     def cv_after_borrowing(self, key: str = ENSEMBLE) -> np.ndarray:
-        """Out-of-fold error after borrowing, on the fitted set (forecast minus actual)."""
+        """Out-of-fold error after borrowing, on the fitted set (forecast minus actual).
+
+        Each held-out station borrows from all its neighbours, their residuals taken from the
+        fit that left the station's fold out.
+        """
         w = self.wide
-        error = self.cv[key][w] - self.sf.y[w]
-        return error + borrow(self.residual(key), self.sf.xy[w], self.sf.xy[w], same=True)
+        y, xy, fold = self.sf.y[w], self.sf.xy[w], self.sf.fold[w]
+        error = self.cv[key][w] - y
+        for k, fit_k in enumerate(self.folds[key]):
+            test = fold == k
+            error[test] += borrow(y - fit_k[w], xy, xy[test], exclude=np.flatnonzero(test))
+        return error
 
     def interval_half_width(self, forecast: np.ndarray) -> np.ndarray:
         """Return the 80% interval's half-width in log terms, by the forecast's size fifth."""
@@ -213,13 +237,17 @@ def fit(paths: DataPaths, cache: Cache) -> Model:
         places=places,
         cv={},
         full={},
+        folds={},
     )
     for m in model.members:
         logger.info("Fitting %s", m.key)
-        model.cv[m.key], model.full[m.key] = _cross_validate(model, m)
-    model.cv[members.KRIGING], model.full[members.KRIGING] = _kriging(model)
+        model.cv[m.key], model.full[m.key], model.folds[m.key] = _cross_validate(model, m)
+    model.cv[members.KRIGING], model.full[members.KRIGING], model.folds[members.KRIGING] = (
+        _kriging(model)
+    )
     model.cv[ENSEMBLE] = np.mean([model.cv[k] for k in members.ORDER], axis=0)
     model.full[ENSEMBLE] = np.mean([model.full[k] for k in members.ORDER], axis=0)
+    model.folds[ENSEMBLE] = list(np.mean([model.folds[k] for k in members.ORDER], axis=0))
     return model
 
 
@@ -264,32 +292,40 @@ def target(model: Model, m: Member) -> np.ndarray:
     return model.y3 if m.target == "y3" else model.sf.y
 
 
-def _cross_validate(model: Model, m: Member) -> tuple[np.ndarray, np.ndarray]:
+def _cross_validate(model: Model, m: Member) -> tuple[np.ndarray, np.ndarray, list[np.ndarray]]:
+    """Return the out-of-fold forecast, the fit on every station and each fold's fit."""
     sf, y = model.sf, target(model, m)
     cv = np.full(len(sf.index), np.nan)
+    folds = []
     for k in range(frame.FOLDS):
         x = member_design(m, model.terms, model.access_by_fold[k])
         train = sf.wide & (sf.fold != k) & np.isfinite(y)
         test = sf.wide & (sf.fold == k)
-        cv[test] = m.learner(x[train], y[train], x[test])
+        folds.append(m.learner(x[train], y[train], x))
+        cv[test] = folds[-1][test]
     x = member_design(m, model.terms, model.access["ln_access"])
     train = sf.wide & np.isfinite(y)
-    return cv, m.learner(x[train], y[train], x)
+    return cv, m.learner(x[train], y[train], x), folds
 
 
-def _kriging(model: Model) -> tuple[np.ndarray, np.ndarray]:
-    """Fit footfall per catchment resident, with borrowing as its only spatial model."""
+def _kriging(model: Model) -> tuple[np.ndarray, np.ndarray, list[np.ndarray]]:
+    """Fit footfall per catchment resident, with borrowing as its only spatial model.
+
+    A fold's fit, for borrowing, is ln residents plus the training mean, without its own borrowing.
+    """
     sf = model.sf
     lp = model.terms["ln_pop"].to_numpy(float)
     cv = np.full(len(sf.index), np.nan)
+    folds = []
     for k in range(frame.FOLDS):
         train = np.flatnonzero(sf.wide & (sf.fold != k) & np.isfinite(sf.y))
         test = sf.wide & (sf.fold == k)
         mu = np.mean(sf.y[train] - lp[train])
         r = sf.y[train] - lp[train] - mu
         cv[test] = lp[test] + mu + borrow(r, sf.xy[train], sf.xy[test])
+        folds.append(lp + mu)
     w = np.flatnonzero(sf.wide)
-    return cv, lp + np.mean((sf.y - lp)[w])
+    return cv, lp + np.mean((sf.y - lp)[w]), folds
 
 
 def _rmse(error: np.ndarray) -> float:
