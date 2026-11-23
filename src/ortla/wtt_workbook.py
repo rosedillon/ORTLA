@@ -61,7 +61,10 @@ _LABEL_COLUMN = "B"
 _LOCATION_COLUMN = "A"
 _FIRST_LOCATION_ROW = 9
 
-# The header block above every column of trains.
+# The header block above every column of trains, as the rows the books
+# printed up to December 2025. From the June 2026 books an Operator row
+# follows the UID and pushes the rest down one, so the rows are found
+# by their label in column B and these positions are only the fallback.
 _HEADER_ROWS = {
     1: "headcode",
     2: "uid",
@@ -72,13 +75,28 @@ _HEADER_ROWS = {
     7: "days",
     8: "service_code",
 }
+_HEADER_LABELS = {
+    "TID": "headcode",
+    "UID": "uid",
+    "Origin": "origin",
+    "Destination": "destination",
+    "Timing Load": "timing_load",
+    "Dates of Operation": "dates",
+    "Running Days": "days",
+    "Service Code": "service_code",
+}
 
-# A working time is HHMM with a separator that says whether the train
-# stops: "T" for a stop, "/" for a pass, and a half minute is written as
-# a trailing fraction. A letter after the separator is an activity code,
-# not a digit.
-_TIME = re.compile(r"^(\d{2})(?P<sep>[T/])[A-Z]*(\d{2})(?P<half>[½])?$")
-_STOP_SEPARATOR = "T"
+# A working time is HHMM with the train's activity codes between the hours
+# and the minutes, and a half minute is written as a trailing fraction:
+# "15T45½", "06T RM24", "05OPRM01", "23TF-U37". "/" is a pass. A time
+# with no code ("1557") is the departure of a stop whose arrival carries
+# the codes. Of the CIF activity codes only these make a call public: T
+# (take up and set down), TB and TF (train begins and finishes), D (set
+# down only), U (take up only) and R (request stop). The others (OP, RM,
+# RR, A, C, X, W, -D, -U and so on) are operational on their own.
+_TIME = re.compile(r"^(\d{2})(?P<act>[^\d]*)(\d{2})(?P<half>[½])?$")
+_ACTIVITY = re.compile(r"-[A-Z]|TB|TF|TW|OP|RM|RR|PR|[A-Z]")
+_PUBLIC_ACTIVITY = {"T", "TB", "TF", "D", "U", "R"}
 _HALF_MINUTE = "½"
 _NO_TIME = ".."
 
@@ -93,7 +111,9 @@ _DAY_CODES = {
     "SX": "1111100",
     "SO": "0000010",
     "SU": "0000001",
-    "EWD": "1111100",
+    # "Each weekday" is Monday to Saturday: 2,110 of 2,165 EWD trains in the
+    # June 2026 books run Monday to Saturday in the CIF.
+    "EWD": "1111110",
     "MO": "1000000",
     "TO": "0100000",
     "WO": "0010000",
@@ -107,6 +127,12 @@ _DAY_CODES = {
     "MSX": "0111100",
     "FSX": "1111000",
 }
+# Any other code is days run together, then O (only those days) or X
+# (the weekday book's Monday to Friday except those days): SUO, TWThO,
+# WSX. Th and Su come before T and S so "TThO" reads as Tue and Thu.
+_DAY_TOKEN = re.compile(r"SU|TH|M|T|W|F|S")
+_DAY_COMPOUND = re.compile(r"(?:SU|TH|M|T|W|F|S)+[OX]")
+_DAY_INDEX = {"M": 0, "T": 1, "W": 2, "TH": 3, "F": 4, "S": 5, "SU": 6}
 _DATE_RANGE = re.compile(r"(\d{2})/(\d{2})/(\d{4})\s+to\s+(\d{2})/(\d{2})/(\d{4})")
 _PERMANENT_STP = "P"
 MINUTES_PER_DAY = 1440
@@ -127,7 +153,8 @@ _LONDON_PREFIX = "LONDON"
 
 def _books(path: pathlib.Path) -> list[pathlib.Path]:
     """List the Working Timetable books under ``path``."""
-    return sorted(p for p in path.glob("*/*/*.xlsx") if not p.name.startswith((".", "~$")))
+    # Most books sit two folders down (CJ/CJ01/...), but not all (CJ/CJ02B ...).
+    return sorted(p for p in path.rglob("*.xlsx") if not p.name.startswith((".", "~$")))
 
 
 def is_wtt_workbook_set(path: pathlib.Path) -> bool:
@@ -181,7 +208,8 @@ def _parse_time(text: str) -> tuple[str, bool] | None:
     if match is None:
         return None
     hours, minutes = match.group(1), match.group(3)
-    return f"{hours}{minutes}", match.group("sep") == _STOP_SEPARATOR
+    codes = set(_ACTIVITY.findall(match.group("act").replace(" ", "")))
+    return f"{hours}{minutes}", bool(codes & _PUBLIC_ACTIVITY)
 
 
 def _train_category(headcode: str) -> str | None:
@@ -206,7 +234,15 @@ def _is_passenger(headcode: str) -> bool:
 
 def _days_mask(text: str) -> str:
     """Return a Monday-to-Sunday mask for a WTT running-day code."""
-    return _DAY_CODES.get(text.strip().upper().replace(" ", ""), _ALL_WEEK)
+    code = text.strip().upper().replace(" ", "")
+    if code in _DAY_CODES:
+        return _DAY_CODES[code]
+    if not _DAY_COMPOUND.fullmatch(code):
+        return _ALL_WEEK
+    days = {_DAY_INDEX[token] for token in _DAY_TOKEN.findall(code[:-1])}
+    if code.endswith("O"):
+        return "".join("1" if i in days else "0" for i in range(7))
+    return "".join("1" if i < 5 and i not in days else "0" for i in range(7))
 
 
 def _dates(text: str) -> tuple[str, str] | None:
@@ -303,21 +339,38 @@ def _iter_book_columns(path: pathlib.Path, names: dict) -> Iterator[tuple[str, d
             yield from _iter_sheet_columns(cells, names)
 
 
+def _header_rows(cells: dict) -> dict[int, str]:
+    """Return ``{row: field}`` for a sheet's header block, read from its labels.
+
+    Falls back to the pre-2026 positions when a sheet doesn't label
+    every field.
+    """
+    found = {
+        row: _HEADER_LABELS[str(label).strip()]
+        for (column, row), label in cells.items()
+        if column == _LABEL_COLUMN and row < _FIRST_LOCATION_ROW + 2
+        and str(label).strip() in _HEADER_LABELS
+    }
+    return found if len(found) == len(_HEADER_LABELS) else _HEADER_ROWS
+
+
 def _iter_sheet_columns(cells: dict, names: dict) -> Iterator[tuple[str, dict]]:
     """Yield ``(uid, partial schedule)`` for each train in a sheet."""
     header_columns = (_LOCATION_COLUMN, _LABEL_COLUMN)
     columns = {column for column, _ in cells if column not in header_columns}
+    header_rows = _header_rows(cells)
+    first_location_row = max(header_rows) + 1
     # The location a row belongs to is the last name printed in column
     # A.
-    rows = sorted({row for _, row in cells if row >= _FIRST_LOCATION_ROW})
+    rows = sorted({row for _, row in cells if row >= first_location_row})
     location_of = {}
     current = None
     for row in rows:
         current = cells.get((_LOCATION_COLUMN, row), current)
         location_of[row] = current
 
-    for column in columns:
-        header = {field: cells.get((column, row), "") for row, field in _HEADER_ROWS.items()}
+    for column in sorted(columns):  # a set: sorted so merges (and so builds) repeat
+        header = {field: cells.get((column, row), "") for row, field in header_rows.items()}
         uid = header["uid"]
         if not uid or uid == "UID":
             continue
@@ -421,8 +474,10 @@ def _order_calls(calls: list[dict], origin: str | None) -> list[dict]:
 
     So the sequence is anchored on the origin the book itself states:
     anything timed earlier than the departure from there belongs to the
-    following day. Without a usable origin the earliest call is the
-    anchor, which is right for any service that does not cross midnight.
+    following day. Without a usable origin (the books' sections may not
+    reach it) the anchor is the call after the longest gap on the clock:
+    a train runs well under a day, so the overnight gap between its last
+    call and its next day's first is the longest.
     """
     timed = []
     for call in calls:
@@ -436,7 +491,10 @@ def _order_calls(calls: list[dict], origin: str | None) -> list[dict]:
         if starts:
             start = min(starts)
     if start is None:
-        start = min(_call_minutes(c) for c in timed)
+        clock = sorted({_call_minutes(c) for c in timed})
+        gaps = [(b - a, b) for a, b in zip(clock, clock[1:])]
+        gaps.append((clock[0] + MINUTES_PER_DAY - clock[-1], clock[0]))
+        start = max(gaps)[1]
 
     def sequence(call: dict) -> int:
         minute = _call_minutes(call)
@@ -476,7 +534,8 @@ def _to_schedule(
     names: dict | None = None,
 ) -> dict | None:
     """One ``JsonScheduleV1``-shaped record, or ``None``."""
-    origin = _resolve(header.get("origin", ""), names or {})
+    # The books print the origin as its name, a line break and the time.
+    origin = _resolve(header.get("origin", "").split("\n")[0], names or {})
     ordered = _order_calls(calls, origin[0] if origin else None)
     if len(ordered) < _MINIMUM_CALLS:
         return None
