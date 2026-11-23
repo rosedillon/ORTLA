@@ -36,3 +36,16 @@ def test_activity_codes():
     assert _parse_time("14RR04") == ("1404", False)
     assert _parse_time("06U49½") == ("0649", True)
     assert _parse_time("..") is None
+
+
+def test_merge_keeps_reversal_calls():
+    from ortla.wtt_workbook import _merge_calls
+    # a station printed at the boundary of two books is one call
+    boundary = [{"tiploc_code": "LEWES", "arr": "1000"}, {"tiploc_code": "LEWES", "dep": "1002"},
+                {"tiploc_code": "FALMER", "arr": "1010"}]
+    assert len(_merge_calls(boundary)) == 2
+    # reversing at Eastbourne calls at Hampden Park twice
+    reversal = [{"tiploc_code": "HMPDNPK", "arr": "1000"}, {"tiploc_code": "EBOURNE", "arr": "1005"},
+                {"tiploc_code": "HMPDNPK", "arr": "1015"}]
+    assert len(_merge_calls(reversal)) == 3
+

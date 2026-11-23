@@ -274,11 +274,15 @@ def load_name_map(cif_path: pathlib.Path) -> dict[str, tuple[str, str | None]]:
         # description *and* a CRS, so that pair is what picks London
         # Bridge out of its signals and Reading out of its platform
         # groups.
-        rank = (1 if crs else 0, 1 if short else 0)
+        # The books print TPS descriptions, so where one station's TPS
+        # description is another's short description ("SWINTON" is
+        # Swinton, Greater Manchester, in TPS and Swinton, South Yorkshire,
+        # in short) the TPS one wins.
         for field in ("tps_description", "description"):
             value = record.get(field)
             if not value:
                 continue
+            rank = (1 if crs else 0, 1 if short else 0, 1 if field == "tps_description" else 0)
             key = value.strip().upper()
             existing = scored.get(key)
             if existing is None or rank > existing[0]:
@@ -422,20 +426,30 @@ def _merge_calls(calls: list[dict]) -> list[dict]:
     printed in both books, typically as the arrival that closes one
     section and the departure that opens the next. Left alone these
     count as two calls, which inflates the busiest interchanges. Entries
-    at the same location within half an hour of each other are the same
-    call; a train that really returns to a location does so far later
-    than that.
+    at the same location within half an hour of each other, with no call
+    elsewhere between them, are the same call. A train can come back
+    sooner (one reversing at Eastbourne calls at Hampden Park either side
+    of it within minutes), but only after being somewhere else.
     """
     by_location: dict[str, list[dict]] = collections.defaultdict(list)
     for call in calls:
         by_location[call["tiploc_code"]].append(call)
+    minutes = sorted((_call_minutes(call), call["tiploc_code"]) for call in calls)
+
+    def elsewhere_between(location: str, start: int, end: int) -> bool:
+        return any(start < m < end and loc != location for m, loc in minutes)
 
     merged = []
     for location_calls in by_location.values():
         groups: list[dict] = []
         for call in sorted(location_calls, key=_call_minutes):
             minute = _call_minutes(call)
-            if groups and minute - _call_minutes(groups[-1]) <= _SAME_CALL_GAP:
+            last = _call_minutes(groups[-1]) if groups else None
+            if (
+                groups
+                and minute - last <= _SAME_CALL_GAP
+                and not elsewhere_between(call["tiploc_code"], last, minute)
+            ):
                 target = groups[-1]
                 for field in ("arr", "dep", "pass"):
                     target[field] = target.get(field) or call.get(field)
@@ -508,10 +522,13 @@ def _schedule_location(call: dict, position: str, passenger: bool) -> dict:
     arrival = call.get("arr")
     departure = call.get("dep")
     passing = call.get("pass")
-    # A public time exists only where a passenger train stops at a
-    # station. The WTT keeps half minutes and the public timetable does
-    # not, so the fraction is dropped (see the module docstring).
-    public = passenger and call.get("stops") and call.get("crs_code")
+    # A public time exists only where a passenger train stops. The CRS is
+    # not required here: platform TIPLOCs ("STOURBRIDGE JN (TOWN PLAT)",
+    # "SHOTTON HIGH LEVEL") have none in the TIPLOC table and get theirs
+    # later, from the timetable build's description match and overrides.
+    # The WTT keeps half minutes and the public timetable does not, so the
+    # fraction is dropped (see the module docstring).
+    public = passenger and call.get("stops")
     return {
         "location_type": position,
         "record_identity": {"LO": "LO", "LI": "LI", "LT": "LT"}[position],
