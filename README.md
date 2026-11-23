@@ -157,7 +157,7 @@ Each command is run as `ortla <command> <config.yml>`.
 | `fares` | Look up RSP standard fares for station pairs. |
 | `commercial` | Operator's commercial case (NPV, IRR, payback) for proposed services. |
 | `hindcast` | Strip a launched service, predict it, and compare with the counts. |
-| `scenario` | Sweep departure times and frequencies for a candidate and appraise each. |
+| `scenario` | Sweep departure times and frequencies for a candidate and appraise each. With `package: true`, price services that run together as one scheme. |
 | `discover` | Scan the network for new direct services worth a closer look. |
 | `new-station` | Forecast a new station's annual entries and exits, with 80% and 90% intervals. |
 | `station-ensemble` | Forecast stations' entries and exits with the thirteen-member ensemble, the more accurate model. |
@@ -285,6 +285,7 @@ ORTLA reads published industry data. None of it is included here.
 | `appraisal` | TAG Data Book values and the economic appraisal. |
 | `commercial_case` | The operator's cashflow, NPV, IRR and payback. |
 | `scenario` | Scenario Studio: sweep, check and appraise a candidate. |
+| `package` | Price and appraise services that run together, as one scheme. |
 | `discovery` | The network scan for new direct services. |
 | `hindcast` | Strip, predict and compare a launched service. |
 | `new_station` | The `new-station` command: SDFT's model plus nearby stations' residuals. |

@@ -34,6 +34,9 @@ transfer_choice_theta: 0.2
 
 # Gravity/catchment model for a leg with no/thin existing demand data (a new
 # or barely-served stop). Both must be set for it to run.
+# The calibrated demand model needs a gravity_model.json. `loading` writes one
+# beside the matrices. For borrowed matrices, name one here.
+# gravity_model_path: "outputs/loading/gravity_model.json"
 table_1410: "/path/to/datasources/table-1410-passenger-entries-and-exits-and-interchanges-by-station.csv"
 gravity_min_loading_observations: 30
 distance:

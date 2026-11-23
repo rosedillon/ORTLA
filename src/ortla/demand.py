@@ -642,6 +642,7 @@ _DEMAND_COLUMNS = [
     "existing_frequency",
     "predicted_annual_trips_captured",
     "predicted_annual_trips_generated",
+    "predicted_annual_trips_generated_slot",
     "demand_model_used",
     "average_fare_gbp",
     "predicted_annual_revenue_gbp",
@@ -1407,6 +1408,27 @@ class _Cell:
     share_trains: float | None
 
 
+def check_demand_model(config: ProposeConfig, gravity: GravityContext | None) -> None:
+    """Stop if the calibrated model is asked for and isn't there."""
+    if config.period_matrices_dir is None or config.demand_model != "calibrated":
+        return
+    if gravity is not None and gravity.model is not None:
+        return
+    missing = [name for name in ("table_1410", "distance") if not getattr(config, name, None)]
+    path = _gravity_model_path(config)
+    if not path.exists():
+        missing.append(f"a gravity model at {path} (or set gravity_model_path)")
+    raise ValueError(
+        'demand_model "calibrated" has no gravity model to price with'
+        + (f": it needs {', '.join(missing)}" if missing else ": none was passed to it")
+        + '. Set demand_model to "legacy" for the uncalibrated pivot.'
+    )
+
+
+def _gravity_model_path(config: ProposeConfig) -> pathlib.Path:
+    return config.gravity_model_path or config.period_matrices_dir.parent / MODEL_FILENAME
+
+
 def predict_demand(
     config: ProposeConfig,
     candidate: CandidateService,
@@ -1422,6 +1444,9 @@ def predict_demand(
 
     Every ordered pair of the candidate's stops is a leg, labelled by the day and period of the
     earlier stop's departure.
+
+    Under ``demand_model`` "calibrated" every leg goes through :func:`calibrated_leg`, and it is
+    an error to have no gravity model. The legacy model works as follows.
 
     * Where the pair has trips in the period matrices and an existing train in the slot, a pivot
       applies: ``new_total = existing * (new_frequency / existing_frequency) ** elasticity``, and
@@ -1450,6 +1475,7 @@ def predict_demand(
     if config.period_matrices_dir is None:
         logger.info("No period_matrices_dir configured; skipping demand prediction.")
         return pd.DataFrame(columns=_DEMAND_COLUMNS)
+    check_demand_model(config, gravity)
 
     calls = prepare_calls(calls)
     direction = _direction_split(config)
@@ -1520,6 +1546,14 @@ def _predict_leg(run: _Run, leg: _Leg) -> dict | None:
     if cell is None:
         return None
     captured, generated, model_used = _capture(run, leg, cell)
+    # `calibrated_leg` spreads the slot's growth over every train in the period, so the
+    # added trains report k / (n + k) of it; the rest rides today's trains. A scheme's
+    # new-to-rail total is all of it, credited here to the added trains. The other
+    # branches already divide the growth by the added trains alone.
+    generated_slot = generated
+    if generated is not None and model_used.startswith("gravity_"):
+        shared_over = cell.share_trains or cell.frequency + cell.added_in_period
+        generated_slot = generated * shared_over / cell.added_in_period
     fare = run.fares.fare(leg.origin_key, leg.destination_key) if run.fares else None
     revenue = round(captured * fare, 2) if captured is not None and fare is not None else None
     return {
@@ -1536,6 +1570,7 @@ def _predict_leg(run: _Run, leg: _Leg) -> dict | None:
         "existing_frequency": cell.frequency,
         "predicted_annual_trips_captured": captured,
         "predicted_annual_trips_generated": generated,
+        "predicted_annual_trips_generated_slot": generated_slot,
         "demand_model_used": model_used,
         "average_fare_gbp": fare,
         "predicted_annual_revenue_gbp": revenue,
@@ -1892,16 +1927,19 @@ def estimate_loading(
 def build_gravity_context(
     config: ProposeConfig, calc: TrackDistanceCalculator | None = None
 ) -> GravityContext | None:
-    """Build the gravity model from ``config``, or ``None`` if unset.
+    """Build the gravity model from ``config``.
 
-    Requires ``table_1410``, ``distance`` and ``period_matrices_dir`` to
-    all be set, and at least one route-type band to be calibrated from
-    the sibling ``{operator}_loading_analysis.csv``. Also loads the
+    The calibrated model needs ``table_1410``, ``distance`` and a fitted model
+    (``gravity_model_path``, else beside the period matrices), and raises
+    without them. The legacy model returns ``None`` without those or without
+    a route-type band to calibrate from the sibling
+    ``{operator}_loading_analysis.csv``. Also loads the
     sibling ``{operator}_temporal_factors.csv`` if present, so estimates
     are scaled by day/period (see :class:`GravityContext`); its absence
     is not fatal, just less precise.
     """
     if not (config.table_1410 and config.distance and config.period_matrices_dir):
+        check_demand_model(config, None)
         return None
 
     operator = config.period_matrices_dir.name.removesuffix("_period_matrices")
@@ -1915,15 +1953,9 @@ def build_gravity_context(
     model = None
     ratios: dict[str, float] = {}
     if config.demand_model == "calibrated":
-        model_path = config.period_matrices_dir.parent / MODEL_FILENAME
+        model_path = _gravity_model_path(config)
         if not model_path.exists():
-            logger.warning(
-                "No %s beside %s (run `loading` with route_frequency_path); "
-                "legs without observed demand will be left insufficient_data.",
-                MODEL_FILENAME,
-                config.period_matrices_dir,
-            )
-            return None
+            check_demand_model(config, None)
         model = GravityModel.load(model_path)
         logger.info(
             "Calibrated gravity model: %d pairs, R^2 %.3f, frequency coefficient %.3f.",

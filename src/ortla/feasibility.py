@@ -59,7 +59,7 @@ import pandas as pd
 
 from ortla.clock import MINUTES_PER_DAY, cif_time_minutes, format_hhmm, hhmm_minutes
 from ortla.demand import predict_demand, stop_time
-from ortla.service_lookup import existing_trains, prepare_calls
+from ortla.service_lookup import StationTiplocs, existing_trains, prepare_calls
 from ortla.stations import canonical_crs, resolve_recodes
 
 if TYPE_CHECKING:
@@ -230,6 +230,9 @@ def check_running_times(
 ) -> pd.DataFrame:
     """Check each leg's proposed running time against the BPLAN minimum.
 
+    Given :class:`~ortla.service_lookup.StationTiplocs`, each leg runs between the platforms the
+    candidate's operator uses.
+
     One row per leg with both times. ``status`` is ok, infeasible, or unverifiable (no BPLAN route
     between the TIPLOCs). An infeasible leg also gets ``suggested_departure`` (keeping the arrival)
     and ``suggested_arrival`` (keeping the departure) that meet the minimum.
@@ -240,6 +243,10 @@ def check_running_times(
         # yet.
         return pd.DataFrame(columns=_RUNNING_TIME_COLUMNS)
 
+    if isinstance(crs_tiploc, StationTiplocs):
+        crs_tiploc = crs_tiploc.for_service(
+            candidate.operator, [stop.station for stop in candidate.stops]
+        )
     rows = []
     stops = candidate.stops
     for prev, nxt in itertools.pairwise(stops):

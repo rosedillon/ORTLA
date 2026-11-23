@@ -165,8 +165,8 @@ def test_joins_and_divides_are_written_with_their_dates(tmp_path):
 
     cif = tmp_path / "x.cif"
     header = "HD" + " " * 78
-    divide = "AANC14853C148852605172612120000100VVSCNR     TP".ljust(80)
-    nextp = "AANC00202Y149382605172612060000001NPSKNGX     TO".ljust(80)
+    divide = "AANC14853C148852605172612120000100VVSCNR      TP".ljust(80)
+    nextp = "AANC00202Y149382605172612060000001NPSKNGX      TO".ljust(80)
     cif.write_text("\n".join([header, divide, nextp]) + "\n", encoding="latin-1")
     path = timetable.write_associations(cif, {"CNR": "CNR"}, tmp_path)
     rows = pd.read_csv(path, dtype=str)
@@ -181,5 +181,30 @@ def test_joins_and_divides_are_written_with_their_dates(tmp_path):
             "end_date": "2026-12-12",
             "days": "0000100",
             "CIF_stp_indicator": "P",
+            "assoc_type": "P",
         }
     ]
+
+
+def test_assign_runs_operating_only_joins_as_separate_trains(tmp_path):
+    from types import SimpleNamespace
+
+    from ortla import assign
+
+    cif = tmp_path / "x.cif"
+    passenger = "AANC14853C148852605172612121111111VVSCNR      TP".ljust(80)
+    operating = "AANC14000C140012605172612121111111JJSCNR      TO".ljust(80)
+    cif.write_text("\n".join(["HD" + " " * 78, passenger, operating]) + "\n", encoding="latin-1")
+    from ortla import timetable
+
+    path = timetable.write_associations(cif, {"CNR": "CNR"}, tmp_path)
+    config = SimpleNamespace(
+        associations_path=path,
+        reference_timestamp=pd.Timestamp("2026-06-17"),
+        station_recodes=None,
+    )
+    kept = assign._associations(config, "Wednesday")
+    assert kept["main_uid"].tolist() == ["C14853"]
+    # Without the type (the NROD JSON), every join is kept as before.
+    pd.read_csv(path, dtype=str).drop(columns="assoc_type").to_csv(path, index=False)
+    assert assign._associations(config, "Wednesday")["main_uid"].tolist() == ["C14853", "C14000"]

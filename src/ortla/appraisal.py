@@ -333,6 +333,10 @@ class AppraisalParameters:
     baseline_trains_per_day: float = 0.0  # do-minimum corridor frequency
     wait_time_vot_multiplier: float = _WAIT_TIME_VOT_MULTIPLIER
     max_average_wait_minutes: float = _MAX_AVERAGE_WAIT_MINUTES
+    # Passenger-minutes of waiting saved a year by everyone on the pairs
+    # served, worked out by the caller. None works the saving out from
+    # the corridor frequency for the proposed services' own riders.
+    wait_minutes_saved: float | None = None
     service_days_per_year: float = 253.0  # operating days/year (weekday-only default)
 
     # Crowding-relief benefit, TAG M3.2 crowding multipliers on
@@ -546,6 +550,15 @@ def _annual_wait_time_benefit(
     """
     if params.operating_hours_per_day <= 0:
         return 0.0
+    if params.wait_minutes_saved is not None:
+        return (
+            params.wait_minutes_saved
+            * demand_factor
+            / 60.0
+            * _blended_vot(params, year)
+            * params.wait_time_vot_multiplier
+            * params.indirect_tax_correction_factor
+        )
     scheme_trains = sum(s.trains_per_day for s in params.proposed_services)
     if scheme_trains <= 0:
         return 0.0

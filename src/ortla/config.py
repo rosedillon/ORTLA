@@ -25,12 +25,14 @@ import pydantic
 from ortla import (
     assign,
     bplan_geography,
+    changes,
     commercial_case,
     discovery,
     fares,
     hindcast,
     new_station,
     od_matrix,
+    package,
     period_matrices,
     propose,
     scenario,
@@ -258,6 +260,13 @@ class LoadingConfig(BaseRunConfig):
     # 0.601-0.603 and the level from 0.809 to 0.817. Implies
     # rebalance_to_table_1410. None leaves the matrix unchanged.
     station_size_exponent: float | None = None
+    # A journey type the operator's counts never show (a commuter
+    # operator's long_distance). "pooled" gives those pairs the operator's
+    # pooled day x period shares. "zero" writes them as zero, which any
+    # mean of operators' matrices inherits, leaving uncounted long-distance
+    # operators about a fifth short; it reproduces runs before this default
+    # changed.
+    missing_type_factors: Literal["zero", "pooled"] = "pooled"
     # Network Rail SRAM's hourly OD demand (output O03, parquet or CSV).
     # When set, each weekday's period matrices move every pair's split
     # over periods and directions towards it by od_profile_strength, the
@@ -706,6 +715,53 @@ class HistoricPerformanceConfig(ctk.BaseConfig):
     password: str | None = None
 
 
+class PathCheckConfig(ctk.BaseConfig):
+    """The working-timetable path check (see :mod:`ortla.path_check`).
+
+    The check is advisory: it never makes a departure infeasible. With it
+    set, `scenario` ranks departures that have a path above those that
+    don't, and `propose`, `scenario` and packages write what stops one.
+    """
+
+    # The raw CIF of the timetable being checked against, which keeps
+    # freight, empty trains and every passing point.
+    cif_path: pathlib.Path
+    # The rules learnt from an earlier timetable. Read if it exists;
+    # otherwise learnt from `learn_from` and written here.
+    rules_path: pathlib.Path
+    # An earlier CIF, and a date it covers, to learn the rules from. The
+    # timetable being checked is refused, as that would be circular.
+    learn_from: pathlib.Path | None = None
+    learn_date: str | None = None
+    # Network Rail's track centre lines, which say where a line is
+    # single. Without them no line is taken to be single.
+    track_shapefile: pathlib.Path | None = None
+
+
+class RangesConfig(ctk.BaseConfig):
+    """Low and high cases of a service's forecast (see :mod:`ortla.ranges`)."""
+
+    # What an actual load is as a multiple of the forecast, at the two
+    # ends of the range. Get them from the operator's own held-out or
+    # in-sample errors: they differ a lot between operators.
+    load_low: float
+    load_high: float
+    # The served-pair frequency elasticity at the two ends.
+    elasticity_low: float = 0.0
+    elasticity_high: float = 0.18
+    # The log growth of a pair gaining its first direct trains.
+    new_link_low: float = 0.0
+    new_link_high: float = 0.45
+
+    @pydantic.model_validator(mode="after")
+    def _ends_in_order(self) -> RangesConfig:
+        if not 0 < self.load_low <= 1 <= self.load_high:
+            raise ValueError("ranges: load_low must be in (0, 1] and load_high at least 1")
+        if self.elasticity_low > self.elasticity_high or self.new_link_low > self.new_link_high:
+            raise ValueError("ranges: each low must be at most its high")
+        return self
+
+
 class ProposeConfig(BaseRunConfig):
     """Check candidate services fit the timetable; predict demand."""
 
@@ -733,7 +789,11 @@ class ProposeConfig(BaseRunConfig):
     # unobserved pair. "legacy": the original pivot
     # (frequency_elasticity) with the footfall-share fallback, kept for
     # comparison.
-    demand_model: str = "calibrated"
+    demand_model: Literal["calibrated", "legacy"] = "calibrated"
+    # The fitted gravity model for "calibrated", which is an error without
+    # one. Unset looks for gravity_model.json beside period_matrices_dir.
+    # Set it for matrices borrowed from another operator or a mean profile.
+    gravity_model_path: pathlib.Path | None = None
     # Override the gravity model's fitted frequency coefficient `b4` for
     # this run, leaving every other coefficient as calibrated. The
     # fitted value is cross-sectional (busy pairs attract trains as well
@@ -944,6 +1004,9 @@ class ProposeConfig(BaseRunConfig):
     # Optional HSP historic-performance check (see
     # HistoricPerformanceConfig), skipped when unset.
     historic_performance: HistoricPerformanceConfig | None = None
+    # Optional path check against the whole working timetable (see
+    # PathCheckConfig), skipped when unset.
+    path_check: PathCheckConfig | None = None
 
     @pydantic.model_validator(mode="after")
     def _resolve_period_minutes(self) -> ProposeConfig:
@@ -1181,10 +1244,25 @@ class ScenarioConfig(ProposeConfig):
     assumptions: ScenarioAssumptionsConfig = pydantic.Field(
         default_factory=ScenarioAssumptionsConfig
     )
+    # Who gains from shorter waits (needs operating_hours_per_day above
+    # 0). "captured": the new train's own riders, at the end-to-end
+    # pair's frequency. "pair": every rider on each pair it serves that
+    # has direct trains today, at that pair's own frequency.
+    wait_benefit_riders: Literal["captured", "pair"] = "captured"
+    # Price `services` as one scheme that runs together, with departures
+    # as entered (see ortla.package). Its waiting benefit is always
+    # "pair". False optimises each service as the only new train.
+    package: bool = False
+    # Reprice the chosen option at the two ends of its range. None
+    # prices the central case alone.
+    ranges: RangesConfig | None = None
 
     def run(self) -> None:
-        """Optimise and appraise every candidate service."""
-        scenario.run_scenario_command(self)
+        """Optimise and appraise every candidate service, or price them as a package."""
+        if self.package:
+            package.run_package(self)
+        else:
+            scenario.run_scenario_command(self)
 
 
 class StripRule(ctk.BaseConfig):
@@ -1307,7 +1385,9 @@ class HindcastConfig(ProposeConfig):
         default_factory=lambda: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
     )
     # Demand models to compare (see ProposeConfig.demand_model).
-    demand_models: list[str] = pydantic.Field(default_factory=lambda: ["calibrated", "legacy"])
+    demand_models: list[Literal["calibrated", "legacy"]] = pydantic.Field(
+        default_factory=lambda: ["calibrated", "legacy"]
+    )
     # Candidates are rebuilt from the timetable, not listed by hand.
     services: list[CandidateService] = pydantic.Field(default_factory=list)
 
@@ -1462,9 +1542,12 @@ class AssignConfig(BaseRunConfig):
     # A date the timetable is in force, for which schedules run; each
     # weekday in `days` takes its week.
     reference_date: str
-    days: list[Literal["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]] = pydantic.Field(
-        default_factory=lambda: ["Wednesday"]
-    )
+    # Saturday and Sunday load from their own matrices, without a profile
+    # of their own: od_profile, the slot share and the direction split
+    # are all weekday fits.
+    days: list[
+        Literal["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    ] = pydantic.Field(default_factory=lambda: ["Wednesday"])
     # Operator key (a loading data reader: northern, gwr, ...) -> its
     # ATOC codes, matrices and counts.
     operators: dict[str, AssignOperatorConfig] = pydantic.Field(default_factory=dict)
@@ -1546,6 +1629,83 @@ class AssignConfig(BaseRunConfig):
         assign.run_assign(self)
 
 
+class TimetableChange(ctk.BaseConfig):
+    """One edit to a train already in the timetable (see :mod:`ortla.changes`).
+
+    * ``cut``: the train doesn't run.
+    * ``retime``: it moves by ``shift_minutes``, whole, or from its departure from
+      ``from_station`` on.
+    * ``add_call``: it also calls at ``station``, after ``after_station``, at ``arrival`` and
+      ``departure``, and every later time moves by ``delay_minutes``.
+    * ``remove_call``: it doesn't call at ``station``, and every later time moves by
+      ``delay_minutes`` (negative where time is saved).
+    """
+
+    kind: Literal["cut", "retime", "add_call", "remove_call"]
+    train_uid: str
+    shift_minutes: float = 0.0
+    from_station: str | None = None
+    station: str | None = None
+    after_station: str | None = None
+    arrival: str | None = None
+    departure: str | None = None
+    delay_minutes: float = 0.0
+
+    @pydantic.model_validator(mode="after")
+    def _has_what_it_needs(self) -> TimetableChange:
+        needed = {
+            "add_call": ("station", "after_station", "arrival"),
+            "remove_call": ("station",),
+        }.get(self.kind, ())
+        if missing := [name for name in needed if not getattr(self, name)]:
+            raise ValueError(f"{self.kind} of {self.train_uid} needs {', '.join(missing)}")
+        return self
+
+
+class ChangesConfig(AssignConfig):
+    """Price changes to the timetable: cuts, retimes, calls and trains added or taken out."""
+
+    changes: list[TimetableChange] = pydantic.Field(default_factory=list)
+    # New trains, priced with the changes. A train's name stands as its UID.
+    services: list[CandidateService] = pydantic.Field(default_factory=list)
+    # The response to a pair's direct trains changing count, and what
+    # bounds it. The elasticity is ProposeConfig's; the steps are the
+    # log change of a pair gaining or losing its direct link, at
+    # link_min_trains a day or more.
+    frequency_elasticity: float = 0.1
+    frequency_elasticity_least: float = 0.0
+    frequency_elasticity_most: float = 0.18
+    link_gain: float = 0.28
+    link_gain_least: float = 0.0
+    link_gain_most: float = 0.45
+    link_loss: float = 0.284
+    link_loss_least: float = 0.0
+    link_loss_most: float = 0.37
+    link_min_trains: int = 4
+    # The matrices journeys are totalled from (one set for all pairs).
+    # Unset takes other_period_matrices_dir, else the last operator's.
+    journeys_matrices_dir: pathlib.Path | None = None
+    fares_dir: pathlib.Path | None = None
+    fare_yield_factor: float = 0.56
+    # As ProposeConfig. The path check needs the `bplan` output too.
+    path_check: PathCheckConfig | None = None
+    bplan_output_path: pathlib.Path | None = None
+
+    def response(self, case: Literal["central", "least", "most"] = "central") -> changes.Response:
+        """Return the response in the central, least or most case."""
+        end = "" if case == "central" else f"_{case}"
+        return changes.Response(
+            getattr(self, f"frequency_elasticity{end}"),
+            getattr(self, f"link_gain{end}"),
+            getattr(self, f"link_loss{end}"),
+            self.link_min_trains,
+        )
+
+    def run(self) -> None:
+        """Price the change."""
+        changes.run_changes(self)
+
+
 # Command registry
 # Every command the tool offers: its name, the config model that drives
 # it and a one-line description. The command line and the desktop app
@@ -1584,6 +1744,10 @@ COMMANDS: dict[str, tuple[type[BaseRunConfig], str]] = {
         "scan the network for high-potential new direct-service scenarios",
     ),
     "assign": (AssignConfig, "load every train in the timetable: national train loads"),
+    "changes": (
+        ChangesConfig,
+        "price timetable changes: cuts, retimes, calls added or taken out",
+    ),
     "new-station": (
         NewStationConfig,
         "forecast a new station's annual entries and exits with SDFT's model",

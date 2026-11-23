@@ -449,6 +449,7 @@ ASSOCIATION_COLUMNS = [
     "end_date",
     "days",
     "CIF_stp_indicator",
+    "assoc_type",
 ]
 
 
@@ -471,6 +472,8 @@ def write_associations(
             "end_date": r.get("assoc_end_date"),
             "days": r.get("assoc_days"),
             "CIF_stp_indicator": r.get("CIF_stp_indicator"),
+            # P passenger or O operating; the NROD JSON doesn't carry it, so blank there.
+            "assoc_type": r.get("assoc_type"),
         }
         for r in cif_archive.iter_association_records(cif_path)
         if r.get("category") in {"JJ", "VV"}

@@ -11,6 +11,9 @@ output_path: "outputs/scenario"
 timetable_calls_path: "outputs/timetable/timetable_calls.csv"
 bplan_output_path: "outputs/bplan"
 period_matrices_dir: "outputs/loading/northern_period_matrices"
+# The calibrated demand model needs a gravity_model.json. `loading` writes one
+# beside the matrices. For borrowed matrices, name one here.
+# gravity_model_path: "outputs/loading/gravity_model.json"
 table_1410: "/path/to/datasources/table-1410-passenger-entries-and-exits-and-interchanges-by-station.csv"
 tag_databook_path: "/path/to/datasources/TAG-data-book.xlsm"
 fares_dir: "outputs/fares"
@@ -33,7 +36,14 @@ distance:
   stations:
     path: "/path/to/datasources/stations.csv"
 
+# Price the services below as trains that run together, at the times entered:
+# package: true
+# Credit a shorter wait to every rider on the pairs served. The default,
+# "captured", credits the new train's own riders only.
+wait_benefit_riders: pair
 assumptions:
+  # Without this (the default is 0) no waiting benefit is counted at all.
+  operating_hours_per_day: 16
   appraisal_year: 2028
   capital_cost_m: 5.0
   operating_cost_per_train_km: 27.0

@@ -26,6 +26,7 @@ timetable frame, and :func:`clear_timetable_caches` drops the memos.
 
 from __future__ import annotations
 
+import collections
 import logging
 from typing import TYPE_CHECKING
 
@@ -40,11 +41,11 @@ from ortla.clock import (
     elapsed,
     hhmm_minutes,
 )
-from ortla.stations import LONDON_TERMINALS, canonical_crs, resolve_aliases
+from ortla.stations import LONDON_TERMINALS, canonical_crs, resolve_aliases, resolve_recodes
 from ortla.timetable import SERVICE_KEY, filter_services, resolve_reference_date
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
     from ortla.config import ServiceLookupConfig
 
@@ -366,7 +367,79 @@ def _run_service_lookup_pair(
     )
 
 
-def crs_to_tiploc_map(calls: pd.DataFrame) -> dict[str, str]:
+class StationTiplocs(dict):
+    """A CRS -> TIPLOC map that also knows which platforms each operator's trains use.
+
+    As a dict it gives each code's busiest TIPLOC. :meth:`for_service` narrows that to a service's
+    own: Paddington is PADTLL to the Elizabeth line and PADTON to Great Western.
+    """
+
+    def __init__(
+        self, busiest: dict[str, str], calls: pd.DataFrame, recodes: dict[str, str]
+    ) -> None:
+        """Keep the busiest map, and the calls to learn each operator's platforms from."""
+        super().__init__(busiest)
+        self._calls, self._recodes = calls, recodes
+        self._used: dict[str, list[tuple[str, str, str, int]]] | None = None
+
+    def _platforms(self) -> dict[str, list[tuple[str, str, str, int]]]:
+        """``{station: [(operator, station beside it, TIPLOC, calls)]}``, worked out once."""
+        if self._used is None:
+            calls = self._calls
+            key = ["train_uid", "start_date", "days_runs"]
+            if not {*key, "atoc_code"} <= set(calls.columns):
+                self._used = {}
+                return self._used
+            calls = calls[[*key, "atoc_code", "crs", "tiploc"]].dropna(subset=["crs", "tiploc"])
+            crs = calls["crs"].astype(str).str.strip().str.upper().replace(self._recodes)
+            train = crs.groupby([calls[column] for column in key], sort=False)
+            row = {
+                "crs": crs,
+                "operator": calls["atoc_code"].fillna("").astype(str).str.strip(),
+                "tiploc": calls["tiploc"].astype(str).str.strip().str.upper(),
+            }
+            sides = [
+                pd.DataFrame({**row, "beside": train.shift(step).fillna("")}) for step in (1, -1)
+            ]
+            counted = pd.concat(sides).value_counts(["crs", "operator", "beside", "tiploc"])
+            used: dict[str, list[tuple[str, str, str, int]]] = {}
+            for (station, operator, beside, tiploc), n in counted.items():
+                used.setdefault(station, []).append((operator, beside, tiploc, int(n)))
+            self._used = used
+        return self._used
+
+    def for_service(self, operator: str | None, stations: Sequence[str]) -> dict[str, str]:
+        """Give each stop the TIPLOC the service would use.
+
+        That is the one the operator's trains to or from the stops either side use, or failing
+        those the operator's commonest there. With no operator, every train to or from those
+        stops votes. A stop typed by a platform group's own code keeps that group's.
+        """
+        typed = [station.strip().upper() for station in stations]
+        codes = [self._recodes.get(code, code) for code in typed]
+        chosen = dict(self)
+        for i, (as_typed, code) in enumerate(zip(typed, codes, strict=True)):
+            if as_typed != code:
+                continue
+            rows = self._platforms().get(code, [])
+            if operator:
+                rows = [row for row in rows if row[0] == operator]
+            beside = {*codes[max(i - 1, 0) : i], *codes[i + 1 : i + 2]}
+            near = [row for row in rows if row[1] in beside]
+            voters = near or (rows if operator else [])
+            votes: collections.Counter[str] = collections.Counter()
+            for *_, tiploc, n in voters:
+                votes[tiploc] += n
+            if votes:
+                main = self.get(code)
+                # A tie goes to the busiest, then by name, so that a rerun chooses the same.
+                chosen[code] = min(votes, key=lambda x: (-votes[x], x != main, x))
+        return chosen
+
+
+def crs_to_tiploc_map(
+    calls: pd.DataFrame, recodes: dict[str, str] | None = None
+) -> StationTiplocs:
     """Build a CRS -> TIPLOC map from the cleaned calls table.
 
     Every call row already carries both codes for its own station (see
@@ -376,6 +449,9 @@ def crs_to_tiploc_map(calls: pd.DataFrame) -> dict[str, str]:
     Waterloo) maps to the one most calls use, rather than whichever came
     last, which BPLAN might not route and the running-time check would
     skip as unverifiable.
+
+    ``recodes`` join a station's second codes, so that a service's own
+    platforms can be found under either (:class:`StationTiplocs`).
     """
     pairs = calls[["crs", "tiploc"]].dropna()
     pairs = pd.DataFrame(
@@ -386,7 +462,11 @@ def crs_to_tiploc_map(calls: pd.DataFrame) -> dict[str, str]:
     )
     pairs = pairs[pairs["crs"].ne("") & pairs["tiploc"].ne("")]
     busiest = pairs.value_counts().reset_index().drop_duplicates("crs")
-    return dict(zip(busiest["crs"], busiest["tiploc"], strict=True))
+    return StationTiplocs(
+        dict(zip(busiest["crs"], busiest["tiploc"], strict=True)),
+        calls,
+        resolve_recodes(None) if recodes is None else recodes,
+    )
 
 
 # Per-run memo of timetable filtering. Keys use id() of the source

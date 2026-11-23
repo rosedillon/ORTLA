@@ -69,6 +69,7 @@ from ortla.stations import (
 from ortla.timetable import read_public_calls
 
 if TYPE_CHECKING:
+    from ortla.changes import Network
     from ortla.config import AssignConfig
 
 logger = logging.getLogger(__name__)
@@ -116,6 +117,10 @@ def _associations(config: AssignConfig, weekday: str) -> pd.DataFrame:
         ]
     if "days" in associations:  # CIF days-run mask, Monday first
         associations = associations[associations["days"].str[WEEKDAYS.index(weekday)] == "1"]
+    if "assoc_type" in associations:
+        # Only the fixed-width CIF carries the type. An operating-only join (O) moves a unit,
+        # not passengers, so its portions run as separate trains. Unknown types are kept.
+        associations = associations[associations["assoc_type"].fillna("P").ne("O")]
     return recode_columns(associations, resolve_recodes(config.station_recodes), ["crs"])
 
 
@@ -128,6 +133,7 @@ def assign_day(  # noqa: C901, PLR0912
     split: DirectionSplitModel | None,
     footfall: dict[str, int],
     coordinates: pd.DataFrame | None,
+    network: Network | None = None,
 ) -> pd.DataFrame:
     """Every loaded train's segments on ``weekday``, with operator.
 
@@ -135,7 +141,10 @@ def assign_day(  # noqa: C901, PLR0912
     change to it. Cut trains and their passengers move to the trains left, and a pair that
     loses its direct train changes instead, adding a boarding. The direct and
     changing journeys are logged and kept in ``attrs`` (``journeys_direct``,
-    ``journeys_changing``); for a service change use ``propose`` or ``scenario``.
+    ``journeys_changing``); for a service change use ``changes``, ``propose`` or ``scenario``.
+
+    A ``network`` (:class:`ortla.changes.Network`) is shown the day's direct trains and routes,
+    and scales the matrices by its response to a change. None, the default, leaves them fixed.
     """
     cutoffs = config.time_periods_cutoffs
     periods = ["early", *cutoffs]
@@ -177,6 +186,8 @@ def assign_day(  # noqa: C901, PLR0912
         routes.route(pair_o, pair_d, km, *detour)
         if config.transfer_choice_theta is not None:
             routes.choose(pair_o, pair_d, config.transfer_choice_theta, km, *detour)
+    if network is not None:
+        network.observe(legs, o_key, d_key, routes)
     shares = slot_shares(legs, share_model, aliases, calls=day, coordinates=coordinates)
     london = legs[["svc_origin_crs", "svc_dest_crs"]].isin(LONDON_TERMINALS).any(axis=1)
     scale_london = (
@@ -195,6 +206,8 @@ def assign_day(  # noqa: C901, PLR0912
             continue
         operator[k] = name
         matrices = PeriodMatrices(directory, config.odm_open_share)
+        if network is not None:
+            matrices = network.scaled(matrices)
         raw = matrices.cells(weekday, leg_period[k], o_key[k], d_key[k])
         cell, has = np.nan_to_num(raw), ~np.isnan(raw)
         routed, changing, chosen = np.zeros(len(k)), np.zeros(len(k)), np.zeros(len(k))
@@ -314,10 +327,25 @@ def match_counts(
             + rest["Origin Departure Time"].astype("string").fillna("").str[:5]
         )
         by_key = rest_key.map(unique)
+        # Some older feeds carry no UID and, in place of a headcode, a label
+        # such as "0002LSTCOL". Those rows alone are matched on ends and
+        # origin departure, where no other train that day shares them.
+        ends = own["train_origin"].astype(str) + "|" + own["train_destination"].astype(str)
+        ends = ends + "|" + own["train_departure"].astype(str)
+        unique_ends = own.assign(ends=ends)[~ends.duplicated(keep=False)].set_index("ends")["train_uid"]
+        loose = by_key.isna() & rest["Headcode"].astype(str).str.len().ne(4)
+        by_ends = (
+            rest["Origin CRS"].astype(str)
+            + "|"
+            + rest["Destination CRS"].astype(str)
+            + "|"
+            + rest["Origin Departure Time"].astype("string").fillna("").str[:5]
+        ).where(loose).map(unique_ends)
         matched = pd.concat(
             [
                 rows[by_uid].assign(train_uid=rows.loc[by_uid, "Unique ID"]),
                 rest[by_key.notna()].assign(train_uid=by_key[by_key.notna()]),
+                rest[by_ends.notna()].assign(train_uid=by_ends[by_ends.notna()]),
             ]
         )
         # A train calling at a station twice (a loop, a reversal) has a
@@ -414,6 +442,28 @@ def _share_model(config: AssignConfig) -> SlotShareModel | None:
     return model
 
 
+def load_inputs(config: AssignConfig) -> dict[str, object]:
+    """Read what :func:`assign_day` takes beside the calls and config."""
+    coordinates = _coordinates(config)
+    split = (
+        DirectionSplitModel.load(models.resolve(config.direction_split_model))
+        if config.direction_split_model is not None
+        else None
+    )
+    footfall = load_table_1410(config.table_1410) if config.table_1410 is not None else {}
+    for crs, share in (config.odm_open_share or {}).items():
+        if crs in footfall:
+            footfall[crs] = int(footfall[crs] / share)
+    if split is not None and not footfall:
+        raise ValueError("assign: direction_split_model needs table_1410 for the footfall")
+    return {
+        "coordinates": coordinates,
+        "split": split,
+        "footfall": footfall,
+        "share_model": _share_model(config),
+    }
+
+
 def run_assign(config: AssignConfig) -> None:
     """Load every train, write the tables and score against counts.
 
@@ -435,32 +485,9 @@ def run_assign(config: AssignConfig) -> None:
     out.mkdir(parents=True, exist_ok=True)
     recodes = resolve_recodes(config.station_recodes)
     calls = recode_columns(read_public_calls(config.timetable_calls_path), recodes, ["crs"])
-    coordinates = _coordinates(config)
-    split = (
-        DirectionSplitModel.load(models.resolve(config.direction_split_model))
-        if config.direction_split_model is not None
-        else None
-    )
-    footfall = load_table_1410(config.table_1410) if config.table_1410 is not None else {}
-    for crs, share in (config.odm_open_share or {}).items():
-        if crs in footfall:
-            footfall[crs] = int(footfall[crs] / share)
-    if split is not None and not footfall:
-        raise ValueError("assign: direction_split_model needs table_1410 for the footfall")
-    share_model = _share_model(config)
+    inputs = load_inputs(config)
     segments = pd.concat(
-        [
-            assign_day(
-                calls,
-                day,
-                config,
-                share_model=share_model,
-                split=split,
-                footfall=footfall,
-                coordinates=coordinates,
-            )
-            for day in config.days
-        ],
+        [assign_day(calls, day, config, **inputs) for day in config.days],
         ignore_index=True,
     )
 

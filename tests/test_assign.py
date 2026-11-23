@@ -142,6 +142,42 @@ def test_counts_match_by_uid_or_by_headcode_and_ends():
     assert matched.loc["X2", "actual_load"] == pytest.approx(7.0)
 
 
+def test_counts_without_uid_or_headcode_match_on_unique_ends_and_departure():
+    segments = pd.DataFrame(
+        {
+            "day": "Wednesday",
+            "service": [0, 1, 2],
+            "atoc_code": "XX",
+            "train_uid": ["X1", "X2", "X3"],
+            "headcode": ["1X01", "1X02", "1X03"],
+            "train_origin": "AAA",
+            "train_destination": "CCC",
+            "train_departure": ["08:00", "08:30", "08:30"],
+        }
+    )
+    counts = pd.DataFrame(
+        {
+            "Service Week Day": "Wednesday",
+            "Unique ID": None,
+            # 08:00 is unique, 08:30 is shared by two trains; a real headcode
+            # that matches nothing stays unmatched.
+            "Headcode": ["0800AAACCC", "0830AAACCC", "9Z99"],
+            "Origin CRS": "AAA",
+            "Destination CRS": "CCC",
+            "Origin Departure Time": ["08:00:00", "08:30:00", "08:00:00"],
+            "Departure from CRS": "AAA",
+            "Call Sequence": 1,
+            "RSP Period": "1",
+            "Mean Load on Departure": [10.0, 20.0, 30.0],
+            "Mean Passengers On": [10.0, 20.0, 30.0],
+            "Mean Passengers Off": 0.0,
+        }
+    )
+    matched = assign.match_counts(counts, segments, ["XX"])
+    assert matched["train_uid"].tolist() == ["X1"]
+    assert matched["actual_load"].tolist() == [10.0]
+
+
 def test_undated_feed_reads_each_file_as_a_period(tmp_path):
     row = {
         "Unique ID": "X1",

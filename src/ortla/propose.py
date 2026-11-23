@@ -31,6 +31,7 @@ from ortla.feasibility import (
     recode_stops,
     search_departure_window,
 )
+from ortla.paths import CandidatePaths
 from ortla.service_lookup import crs_to_tiploc_map
 from ortla.stations import recode_columns, resolve_recodes
 from ortla.timetable import read_public_calls, resolve_reference_date
@@ -229,12 +230,45 @@ def shared_pairs(services: list[CandidateService]) -> list[tuple[str, str]]:
     return sorted(p for p, n in seen.items() if n > 1)
 
 
-def run_propose(config: ProposeConfig) -> None:
+def warn_shared_pairs(services: list[CandidateService], command: str) -> None:
+    """Warn that overlapping candidates are priced apart, so their results can't be summed."""
+    shared = shared_pairs(services)
+    if shared:
+        logger.warning(
+            "%d station pairs are served by more than one candidate (%s). %s prices each"
+            " candidate as the only new train, so they don't dilute each other and the"
+            " new-link uplift doesn't see their combined frequency. Their results can't be"
+            " added up as a package.",
+            len(shared),
+            ", ".join(f"{o}-{d}" for o, d in shared[:5]),
+            command,
+        )
+
+
+def _report_paths(
+    config: ProposeConfig,
+    candidate: CandidateService,
+    candidate_paths: CandidatePaths,
+    issues: list[str],
+) -> None:
+    """Write the candidate's path on each day, and say what stops one."""
+    rows = candidate_paths.check(candidate)
+    rows.to_csv(config.output_path / f"propose_{candidate.name}_paths.csv", index=False)
+    for _, row in rows[~rows["path_clear"].astype(bool)].iterrows():
+        issues.append(
+            f"[{candidate.name}] NO PATH (advisory): {row['day']} dep {row['departure']}: "
+            f"{row['rule']} at {row['place']} {row['time']} "
+            f"{row['train']} {row['detail']}".rstrip()
+        )
+
+
+def run_propose(config: ProposeConfig) -> None:  # noqa: C901 (one step a check)
     """Check every candidate's feasibility and predict its demand.
 
     Writes, per candidate, to ``config.output_path``:
 
     * ``propose_{name}_running_times.csv`` and ``propose_{name}_headway_conflicts.csv``.
+    * ``propose_{name}_paths.csv`` when ``path_check`` is set.
     * ``propose_{name}_historic_performance.csv`` when ``historic_performance`` is set.
     * ``propose_{name}_demand_by_leg.csv`` when ``period_matrices_dir`` is set, priced into
       ``predicted_annual_revenue_gbp`` when ``fares_dir`` is set.
@@ -247,11 +281,11 @@ def run_propose(config: ProposeConfig) -> None:
 
     logger.info("Loading cleaned calls from %s ...", config.timetable_calls_path)
     calls = read_public_calls(config.timetable_calls_path)
-    crs_tiploc = crs_to_tiploc_map(calls)
+    recodes = resolve_recodes(config.station_recodes)
+    crs_tiploc = crs_to_tiploc_map(calls, recodes)
     # After the TIPLOC map, as in the hindcast: running times are looked
     # up by each stop's own TIPLOC, while service counts need one code
     # per station.
-    recodes = resolve_recodes(config.station_recodes)
     calls = recode_columns(calls, recodes, ["crs"])
 
     reference_date = resolve_reference_date(calls, config)
@@ -277,18 +311,16 @@ def run_propose(config: ProposeConfig) -> None:
 
     gravity = build_gravity_context(config)
     fares = build_fares_context(config)
+    candidate_paths = (
+        CandidatePaths.build(
+            config.path_check, calls, reference_date, graph, config.bplan_output_path
+        )
+        if config.path_check is not None
+        else None
+    )
 
     issues: list[str] = []
-    shared = shared_pairs(config.services)
-    if shared:
-        logger.warning(
-            "%d station pairs are served by more than one candidate (%s). propose prices"
-            " each candidate as the only new train, so they don't dilute each other and"
-            " the new-link uplift doesn't see their combined frequency. Price a package of"
-            " trains with `scenario`.",
-            len(shared),
-            ", ".join(f"{o}-{d}" for o, d in shared[:5]),
-        )
+    warn_shared_pairs(config.services, "propose")
     for candidate in config.services:
         logger.info("Checking candidate service '%s' ...", candidate.name)
 
@@ -322,6 +354,9 @@ def run_propose(config: ProposeConfig) -> None:
                     f"    FIX: try {leg['suggested_departure']} instead "
                     f"({leg['shift_minutes']:+.0f} min)"
                 )
+
+        if candidate_paths is not None:
+            _report_paths(config, recoded, candidate_paths, issues)
 
         if config.historic_performance is not None:
             _run_historic_performance_check(config, candidate, issues)

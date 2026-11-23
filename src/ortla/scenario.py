@@ -34,11 +34,13 @@ from __future__ import annotations
 import dataclasses
 import itertools
 import logging
+import math
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 
 import pandas as pd
 
+from ortla import ranges
 from ortla.appraisal import (
     AppraisalParameters,
     AppraisalServiceInput,
@@ -47,7 +49,7 @@ from ortla.appraisal import (
     run_appraisal,
 )
 from ortla.bplan_geography import BplanNetworkLinks, BplanTimingGraph
-from ortla.clock import MINUTES_PER_DAY, hhmm_minutes, period_minutes
+from ortla.clock import MINUTES_PER_DAY, hhmm_minutes, period_matrix_path, period_minutes
 from ortla.commercial_case import (
     CommercialCaseParameters,
     CommercialServiceInput,
@@ -57,6 +59,7 @@ from ortla.demand import (
     build_fares_context,
     build_gravity_context,
     candidate_calls,
+    matrix_cell,
     predict_demand,
     stop_time,
     transfer_demand,
@@ -69,14 +72,17 @@ from ortla.feasibility import (
     search_flexible_slot,
     shift_candidate,
 )
+from ortla.paths import CandidatePaths
+from ortla.propose import warn_shared_pairs
 from ortla.service_lookup import (
     best_existing_minutes,
     crs_to_tiploc_map,
     day_services,
     existing_trains,
+    od_services,
     prepare_calls,
 )
-from ortla.stations import recode_columns, resolve_recodes
+from ortla.stations import canonical_crs, recode_columns, resolve_aliases, resolve_recodes
 from ortla.timetable import read_public_calls, resolve_reference_date
 
 if TYPE_CHECKING:
@@ -210,6 +216,12 @@ class ScenarioOption:
     # Passengers new to rail (the rest are abstracted from existing
     # trains).
     annual_passengers_generated: int = 0
+    # Passenger-minutes of waiting saved a year on every pair served,
+    # where wait_benefit_riders is "pair".
+    wait_minutes_saved: float | None = None
+    # Whether the working timetable has a path on every running day;
+    # None where path_check is off or had nothing to check.
+    path_clear: bool | None = None
 
 
 @dataclass
@@ -223,6 +235,11 @@ class ScenarioResult:
     n_departures_feasible: int
     running_times: pd.DataFrame = field(default_factory=pd.DataFrame)
     note: str | None = None  # e.g. running-time infeasible regardless of shift
+    # With path_check: one row a departure tried and running day.
+    paths: pd.DataFrame = field(default_factory=pd.DataFrame)
+    n_departures_with_path: int | None = None
+    # With ranges: the chosen option at each end and in the middle.
+    ranges: pd.DataFrame = field(default_factory=pd.DataFrame)
 
     @property
     def best(self) -> ScenarioOption | None:
@@ -253,6 +270,7 @@ class ScenarioContext:
     network_links: BplanNetworkLinks | None
     gravity: GravityContext | None
     fares: FaresContext | None
+    paths: CandidatePaths | None = None
 
 
 def build_scenario_context(
@@ -266,7 +284,7 @@ def build_scenario_context(
     """
     logger.info("Loading timetable calls from %s ...", config.timetable_calls_path)
     calls = read_public_calls(config.timetable_calls_path)
-    crs_tiploc = crs_to_tiploc_map(calls)
+    crs_tiploc = crs_to_tiploc_map(calls, resolve_recodes(config.station_recodes))
     # Trains at a station's second code (Reading's bay platforms, RDZ)
     # serve its pairs; recoded after the TIPLOC map, as the hindcast
     # does.
@@ -283,8 +301,16 @@ def build_scenario_context(
     gravity = build_gravity_context(config)
     fares = build_fares_context(config)
     prepared = prepare_calls(calls)
+    candidate_paths = (
+        CandidatePaths.build(
+            config.path_check, calls, reference_date, graph, config.bplan_output_path
+        )
+        if config.path_check is not None
+        else None
+    )
 
     return ScenarioContext(
+        paths=candidate_paths,
         calls=calls,
         prepared=prepared,
         crs_tiploc=crs_tiploc,
@@ -310,6 +336,7 @@ def _build_params(
     baseline_trains_per_day: float = 0.0,
     service_days_per_year: float = 253.0,
     generated_passengers: int | None = None,
+    wait_minutes_saved: float | None = None,
 ) -> AppraisalParameters:
     """Build :class:`AppraisalParameters` for one scenario option.
 
@@ -380,6 +407,7 @@ def _build_params(
         max_average_wait_minutes=assumptions.max_average_wait_minutes,
         service_days_per_year=service_days_per_year,
         baseline_seats_per_day=baseline_trains_per_day * seats_per_train,
+        wait_minutes_saved=wait_minutes_saved,
     )
 
 
@@ -408,6 +436,7 @@ def appraise_option(
     baseline_trains_per_day: float = 0.0,
     service_days_per_year: float = 253.0,
     generated_passengers: int | None = None,
+    wait_minutes_saved: float | None = None,
 ) -> AppraisalResults:
     """Run the full WebTAG appraisal for one option.
 
@@ -428,6 +457,7 @@ def appraise_option(
         baseline_trains_per_day=baseline_trains_per_day,
         service_days_per_year=service_days_per_year,
         generated_passengers=generated_passengers,
+        wait_minutes_saved=wait_minutes_saved,
     )
     return run_appraisal(params)
 
@@ -464,6 +494,52 @@ def commercial_case_for_option(
         discount_rate=assumptions.commercial_discount_rate,
     )
     return run_commercial_case(params)
+
+
+def pair_wait_minutes(
+    config: ProposeConfig,
+    trains: list[CandidateService],
+    context: ScenarioContext,
+    demand: pd.DataFrame,
+    assumptions: ScenarioAssumptions,
+    copies: int = 1,
+) -> float:
+    """Passenger-minutes of waiting a year saved on the pairs ``trains`` serve.
+
+    Every rider of a pair gains from its higher frequency, whichever train they take: the pair's
+    annual trips on that weekday times the fall in the average wait between today's direct trains
+    and those plus ``trains`` (each run ``copies`` times). The wait is the appraisal's own: half
+    the headway, capped. A pair with no direct train gains journey time instead, so it adds none.
+    """
+    if demand.empty:
+        return 0.0
+    names = {train.name for train in trains}
+    legs = demand[demand["candidate_name"].isin(names)]
+    aliases = resolve_aliases(config.station_aliases)
+    periods = list(period_minutes(config.time_periods_cutoffs))
+    span = assumptions.operating_hours_per_day * 60.0
+
+    def wait(frequency: float) -> float:
+        return min(0.5 * span / frequency, assumptions.max_average_wait_minutes)
+
+    saved = 0.0
+    for (day, origin, destination), added in (
+        legs.groupby(["day", "from_station", "to_station"]).size().items()
+    ):
+        services = day_services(context.prepared, context.reference_date, day)
+        before = len(od_services(services, origin, destination, config.time_periods_cutoffs))
+        if not before:
+            continue
+        fall = wait(before) - wait(before + added * copies)
+        if fall <= 0:
+            continue
+        o, d = canonical_crs(origin, aliases), canonical_crs(destination, aliases)
+        cells = (
+            matrix_cell(period_matrix_path(config.period_matrices_dir, day, period), o, d)[0]
+            for period in periods
+        )
+        saved += fall * sum(cell or 0.0 for cell in cells)
+    return saved
 
 
 # Time-saving derivation
@@ -783,6 +859,7 @@ def _options_for_departure(
     stop_schedule: list[StopTiming] | None = None,
     total_travel_minutes: float = 0.0,
     scaling: dict[int, tuple[float, float | None]] | None = None,
+    wait_minutes: dict[int, float] | None = None,
 ) -> list[ScenarioOption]:
     """Fan one feasible slot out into one option per frequency.
 
@@ -827,6 +904,7 @@ def _options_for_departure(
                 time_saving,
                 freq,
                 generated_passengers=generated_pax,
+                wait_minutes_saved=(wait_minutes or {}).get(freq),
                 seats_per_train=seats_per_train,
                 in_vehicle_time_minutes=in_vehicle_time_minutes,
                 baseline_trains_per_day=baseline_trains_per_day,
@@ -859,6 +937,7 @@ def _options_for_departure(
                 service_days_per_year=service_days_per_year,
                 stops=list(stop_schedule) if stop_schedule else [],
                 total_travel_minutes=total_travel_minutes,
+                wait_minutes_saved=(wait_minutes or {}).get(freq),
             )
         )
     return options
@@ -875,6 +954,7 @@ class _CorridorContext:
     in_vehicle_time_minutes: float
     baseline_trains_per_day: float
     service_days_per_year: float
+    wait_minutes: dict[int, float] | None = None
 
 
 def _uniform_sweep_options(
@@ -925,6 +1005,7 @@ def _uniform_sweep_options(
                 stop_schedule=stop_schedule,
                 total_travel_minutes=travel_minutes,
                 scaling=scaling,
+                wait_minutes=corridor.wait_minutes,
             )
         )
     return options, None, n_evaluated, n_feasible
@@ -993,6 +1074,7 @@ def _flexible_slot_options(
         stop_schedule=stop_schedule,
         total_travel_minutes=travel_minutes,
         scaling=scaling,
+        wait_minutes=corridor.wait_minutes,
     )
     if flex_options:
         for opt in flex_options:
@@ -1069,6 +1151,133 @@ def _diagnose_empty_result(
         "O-D pairs (too few loading observations for this route type, or the "
         "pairs fall outside its calibrated bands)."
     )
+
+
+def _option_candidate(candidate: CandidateService, option: ScenarioOption) -> CandidateService:
+    """Return ``candidate`` at ``option``'s times."""
+    if not math.isnan(option.shift_minutes):
+        return shift_candidate(candidate, option.shift_minutes)
+    stops = [
+        stop.model_copy(update={"arrival": timed.arrival, "departure": timed.departure})
+        for stop, timed in zip(candidate.stops, option.stops, strict=True)
+    ]
+    return candidate.model_copy(update={"stops": stops})
+
+
+def _mark_paths(
+    checker: CandidatePaths,
+    candidate: CandidateService,
+    departures: pd.DataFrame,
+    options: list[ScenarioOption],
+) -> tuple[pd.DataFrame, int | None]:
+    """Set each option's ``path_clear``; return the rows and how many departures have a path."""
+    shifts = [] if departures.empty else [float(x) for x in departures["shift_minutes"].dropna()]
+    rows = checker.check(candidate, shifts or [0.0])
+    if rows.empty:
+        return rows, None
+    clear = rows.groupby("shift_minutes")["path_clear"].all().to_dict()
+    for option in options:
+        if math.isnan(option.shift_minutes):
+            own = checker.check(_option_candidate(candidate, option))
+            option.path_clear = None if own.empty else bool(own["path_clear"].all())
+        else:
+            found = clear.get(round(option.shift_minutes, 1))
+            option.path_clear = None if found is None else bool(found)
+    return rows, int(sum(clear.values()))
+
+
+def option_ranges(
+    config: ScenarioConfig,
+    assumptions: ScenarioAssumptions,
+    candidate: CandidateService,
+    option: ScenarioOption,
+    context: ScenarioContext,
+    transfers: TransferDemand | None = None,
+) -> pd.DataFrame:
+    """Reprice ``option`` at the low, central and high cases (:mod:`ortla.ranges`).
+
+    The central case is the option. The others move its passengers by how the response moves
+    the demand at its times, then by the loading multiplier.
+    """
+    timed = _option_candidate(candidate, option)
+    per_day = option.trains_per_day
+    per_period = max(1, round(per_day / len(period_minutes(config.time_periods_cutoffs))))
+    added = (
+        None
+        if per_day == 1
+        else lambda _d, period, _o, _x: per_day if period == "day" else per_period
+    )
+
+    def priced(case: ScenarioConfig) -> tuple[float, float]:
+        demand = predict_demand(
+            case,
+            timed,
+            context.prepared,
+            context.reference_date,
+            context.gravity,
+            context.fares,
+            added_trains=added,
+            transfers=transfers,
+        )
+        return (
+            float(demand["predicted_annual_trips_captured"].sum(skipna=True)),
+            float(demand["predicted_annual_trips_generated"].sum(skipna=True)),
+        )
+
+    central, central_generated = priced(config)
+    if central <= 0:
+        return pd.DataFrame(columns=ranges.RANGE_COLUMNS)
+    rows = []
+    for name, load, case in ranges.cases(config):
+        own = option
+        if name != "central":
+            captured, generated = priced(case)
+            passengers = option.annual_passengers * captured / central * load
+            change = (generated - central_generated) * option.annual_passengers / central
+            new = max(0.0, option.annual_passengers_generated + change) * load
+            own = replace(
+                option,
+                annual_passengers=round(passengers),
+                annual_passengers_generated=min(round(passengers), round(new)),
+                wait_minutes_saved=(
+                    None if option.wait_minutes_saved is None else option.wait_minutes_saved * load
+                ),
+            )
+        appraised = evaluate(
+            _build_params(
+                assumptions,
+                candidate.name,
+                own.annual_passengers,
+                own.avg_fare,
+                own.time_saving_minutes,
+                own.trains_per_day,
+                seats_per_train=own.seats_per_train,
+                in_vehicle_time_minutes=own.in_vehicle_time_minutes,
+                baseline_trains_per_day=own.baseline_trains_per_day,
+                service_days_per_year=own.service_days_per_year,
+                generated_passengers=own.annual_passengers_generated,
+                wait_minutes_saved=own.wait_minutes_saved,
+            )
+        )
+        rows.append(
+            {
+                "case": name,
+                "load_multiplier": load,
+                "frequency_elasticity": case.served_pair_frequency_elasticity,
+                "new_link_uplift": case.new_link_uplift,
+                "annual_passengers": own.annual_passengers,
+                "annual_passengers_generated": own.annual_passengers_generated,
+                "annual_revenue_new": own.annual_passengers_generated * own.avg_fare,
+                "webtag_pvb_m": appraised.pvb,
+                "webtag_pvc_m": appraised.pvc,
+                "webtag_npv_m": appraised.npv,
+                "webtag_bcr": appraised.bcr,
+                "commercial_npv_m": commercial_case_for_option(
+                    assumptions, candidate.name, own
+                ).npv_m,
+            }
+        )
+    return pd.DataFrame(rows, columns=ranges.RANGE_COLUMNS)
 
 
 # Public entry point
@@ -1148,15 +1357,10 @@ def generate_scenarios(
         transfers,
         list(assumptions.frequency_options),
     )
-    time_saving = _leg_time_saving(
-        config,
-        recoded,
-        prepared,
-        reference_date,
-        predict_demand(
-            config, recoded, prepared, reference_date, gravity, fares, transfers=transfers
-        ),
+    typed_demand = predict_demand(
+        config, recoded, prepared, reference_date, gravity, fares, transfers=transfers
     )
+    time_saving = _leg_time_saving(config, recoded, prepared, reference_date, typed_demand)
     if time_saving is None:
         time_saving = assumptions.default_time_saving_minutes
         logger.info("No leg has a journey today; journey-time saving %.1f min.", time_saving)
@@ -1183,6 +1387,14 @@ def generate_scenarios(
         baseline_trains_per_day=baseline_trains,
         service_days_per_year=service_days,
     )
+    if (
+        getattr(config, "wait_benefit_riders", "captured") == "pair"
+        and assumptions.operating_hours_per_day > 0
+    ):
+        corridor.wait_minutes = {
+            freq: pair_wait_minutes(config, [recoded], context, typed_demand, assumptions, freq)
+            for freq in assumptions.frequency_options
+        }
     options, note, n_evaluated, n_feasible = _uniform_sweep_options(
         departures, candidate, assumptions, time_saving, corridor, scaling
     )
@@ -1207,8 +1419,12 @@ def generate_scenarios(
         )
     )
 
-    # Rank by NPV, best first (BCR breaks ties for equal-NPV variants).
-    options.sort(key=lambda o: (o.npv, o.bcr), reverse=True)
+    path_rows, n_with_path = pd.DataFrame(), None
+    if context.paths is not None:
+        path_rows, n_with_path = _mark_paths(context.paths, recoded, departures, options)
+    # Rank by NPV, best first (BCR breaks ties for equal-NPV variants). The path check is
+    # advisory, so a departure without a path still ranks, below every one with a path.
+    options.sort(key=lambda o: (o.path_clear is True, o.npv, o.bcr), reverse=True)
 
     if options:
         best = options[0]
@@ -1224,7 +1440,16 @@ def generate_scenarios(
             note = _diagnose_empty_result(config, gravity, running_times, n_evaluated, n_feasible)
         logger.info("No feasible, demand-positive option found for this candidate: %s", note)
 
+    range_rows = pd.DataFrame()
+    if options and getattr(config, "ranges", None) is not None:
+        range_rows = option_ranges(
+            config, assumptions, recoded, options[0], context, transfers=transfers
+        )
+
     return ScenarioResult(
+        paths=path_rows,
+        n_departures_with_path=n_with_path,
+        ranges=range_rows,
         template_name=candidate.name,
         options=options,
         time_saving_minutes=time_saving,
@@ -1237,7 +1462,9 @@ def generate_scenarios(
 
 # CLI wrapper
 def _option_row(candidate_name: str, rank: int, opt: ScenarioOption) -> dict[str, object]:
+    checked = {} if opt.path_clear is None else {"path_clear": opt.path_clear}
     return {
+        **checked,
         "candidate_name": candidate_name,
         "rank": rank,
         "label": opt.label,
@@ -1323,7 +1550,13 @@ def run_scenario_command(config: ScenarioConfig) -> None:
       option, its full WebTAG appraisal and commercial case, or the
       reason nothing was feasible
     * ``scenario_{name}_running_times.csv``: per-leg running-time check
+    * ``scenario_{name}_paths.csv``, with ``path_check``: each departure tried and what stops it
+    * ``scenario_{name}_ranges.csv``, with ``ranges``: the best option's low, central and high
+
+    Each candidate is priced as the only new train, so the results of
+    candidates that share station pairs can't be added up as a package.
     """
+    warn_shared_pairs(config.services, "scenario")
     config.output_path.mkdir(parents=True, exist_ok=True)
     tag = TagDataBook(config.tag_databook_path)
     assumptions = ScenarioAssumptions(
@@ -1358,6 +1591,15 @@ def run_scenario_command(config: ScenarioConfig) -> None:
             "n_options": len(result.options),
             "note": result.note,
         }
+        if context.paths is not None:
+            row["n_departures_with_path"] = result.n_departures_with_path
+            result.paths.to_csv(
+                config.output_path / f"scenario_{candidate.name}_paths.csv", index=False
+            )
+        if config.ranges is not None:
+            result.ranges.to_csv(
+                config.output_path / f"scenario_{candidate.name}_ranges.csv", index=False
+            )
         best = result.best
         if best is not None:
             appraisal = appraise_option(
@@ -1372,6 +1614,7 @@ def run_scenario_command(config: ScenarioConfig) -> None:
                 baseline_trains_per_day=best.baseline_trains_per_day,
                 service_days_per_year=best.service_days_per_year,
                 generated_passengers=best.annual_passengers_generated,
+                wait_minutes_saved=best.wait_minutes_saved,
             )
             commercial = commercial_case_for_option(costed, candidate.name, best)
             row.update(

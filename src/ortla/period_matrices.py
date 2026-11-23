@@ -471,6 +471,39 @@ def classify_od_pairs(
     return odm
 
 
+def pool_missing_types(factors: pd.DataFrame, journey_types: pd.Series) -> pd.DataFrame:
+    """Give each journey type without factors the operator's pooled day x period shares."""
+    labels = factors["journey_type"].astype(str)
+    absent = sorted(set(journey_types.astype(str)) - set(labels) - {"Unknown"})
+    if not absent:
+        return factors
+    # An origin's own profile repeats rows the distance bands already hold.
+    bands = factors[~labels.str.startswith("O:")]
+    pooled = bands.groupby(["Service Week Day", "time_period"], observed=True)["boardings"].sum()
+    if pooled.sum() <= 0:
+        return factors
+    logger.warning(
+        "No factors for journey type %s: using the operator's pooled day and period shares.",
+        ", ".join(absent),
+    )
+    shares = (pooled / pooled.sum()).rename("factor").reset_index()
+    added = [shares.assign(journey_type=label, boardings=0.0) for label in absent]
+    return pd.concat([factors, *added], ignore_index=True)
+
+
+def _warn_missing_types(factors: pd.DataFrame, odm: pd.DataFrame) -> None:
+    absent = set(odm["journey_type"].astype(str)) - set(factors["journey_type"].astype(str))
+    for label in sorted(absent - {"Unknown"}):
+        share = odm.loc[odm["journey_type"] == label, "journeys"].sum() / odm["journeys"].sum()
+        logger.warning(
+            "EVERY %s pair (%.1f%% of journeys) gets zero demand, as the counts have none to"
+            " time them by. A mean of these matrices with others is short by the same zero."
+            ' Set missing_type_factors to "pooled" to keep them.',
+            label,
+            100 * share,
+        )
+
+
 def generate_period_matrices(
     factors: pd.DataFrame,
     config: LoadingConfig,
@@ -502,6 +535,11 @@ def generate_period_matrices(
             len(odm),
             100 * odm.loc[matched, "journeys"].sum() / max(odm["journeys"].sum(), 1),
         )
+
+    if getattr(config, "missing_type_factors", "zero") == "pooled":
+        factors = pool_missing_types(factors, odm["journey_type"])
+    else:
+        _warn_missing_types(factors, odm)
 
     out_dir = pathlib.Path(output_dir or (config.output_path / "period_matrices"))
     out_dir.mkdir(parents=True, exist_ok=True)

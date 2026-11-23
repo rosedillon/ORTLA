@@ -313,5 +313,6 @@ def iter_association_records(path: pathlib.Path) -> Iterator[dict]:
                 "category": _text(line, 34, 36),
                 "date_indicator": _text(line, 36, 37),
                 "location": _text(line, 37, 44),
+                "assoc_type": _text(line, 47, 48),
                 "CIF_stp_indicator": _text(line, 79, 80) or _PERMANENT_STP,
             }

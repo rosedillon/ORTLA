@@ -26,7 +26,7 @@ from ortla import (
     wtt_workbook,
 )
 from ortla.clock import interval_time_cutoffs
-from ortla.config import CandidateService, ServiceStop
+from ortla.config import CandidateService, ProposeConfig, ServiceStop
 from ortla.service_lookup import crs_to_tiploc_map
 
 CUTOFFS = {"am_peak": "7:00", "interpeak": "9:30", "pm_peak": "16:00", "evening": "19:00"}
@@ -54,6 +54,28 @@ def test_crs_to_tiploc_map_takes_the_busiest_tiploc() -> None:
         {"crs": ["CLJ", "CLJ", "CLJ"], "tiploc": ["CLPHMJN", "CLPHMJN", "CLPHMJW"]}
     )
     assert crs_to_tiploc_map(calls) == {"CLJ": "CLPHMJN"}
+
+
+def test_a_service_is_timed_between_its_operators_platforms() -> None:
+    def train(uid: str, operator: str, *stops: tuple[str, str]) -> list[dict]:
+        base = {"train_uid": uid, "start_date": "d", "days_runs": "1", "atoc_code": operator}
+        return [{**base, "crs": crs, "tiploc": tiploc} for crs, tiploc in stops]
+
+    rows = train("A", "GW", ("RDG", "RDNGSTN"), ("PAD", "PADTON"))
+    rows += train("B", "GW", ("RDG", "RDNGSTN"), ("PAD", "PADTON"))
+    rows += train("C", "XR", ("AML", "ACTONML"), ("PDX", "PADTLL"), ("BDS", "BONDST"))
+    tiplocs = crs_to_tiploc_map(pd.DataFrame(rows), {"PDX": "PAD"})
+    assert tiplocs["PAD"] == "PADTON"
+    assert tiplocs.for_service("XR", ["PAD", "BDS"])["PAD"] == "PADTLL"
+    assert tiplocs.for_service("GW", ["PAD", "RDG"])["PAD"] == "PADTON"
+    # With no operator, the trains to the stop beside it decide.
+    assert tiplocs.for_service(None, ["PAD", "BDS"])["PAD"] == "PADTLL"
+    assert tiplocs.for_service(None, ["PAD", "ZZZ"])["PAD"] == "PADTON"
+    # An operator that doesn't call there keeps the busiest.
+    assert tiplocs.for_service("VT", ["PAD", "BDS"])["PAD"] == "PADTON"
+    # Another operator's platforms don't follow a service that skips the stop beside them.
+    assert tiplocs.for_service("XR", ["PAD", "RDG"])["PAD"] == "PADTLL"
+    assert tiplocs.for_service("GW", ["PDX", "BDS"])["PDX"] == "PADTLL"
 
 
 def test_recode_stops_uses_the_odm_code() -> None:
@@ -261,3 +283,76 @@ def test_propose_names_station_pairs_two_candidates_share():
     one = service("a", ["OXF", "BLY", "CBG"])
     assert shared_pairs([one]) == []
     assert shared_pairs([one, service("b", ["CBG", "BDM", "OXF"])]) == [("CBG", "OXF")]
+
+
+@pytest.mark.parametrize("command", ["propose", "scenario"])
+def test_overlapping_candidates_are_warned_not_to_be_added(command, caplog):
+    from ortla.propose import warn_shared_pairs
+
+    def service(name, codes):
+        return CandidateService(
+            name=name,
+            traction_code="158",
+            days_of_week=["Wednesday"],
+            stops=[ServiceStop(station=c) for c in codes],
+        )
+
+    warn_shared_pairs([service("a", ["OXF", "CBG"])], command)
+    assert not caplog.records
+    warn_shared_pairs([service("a", ["OXF", "CBG"]), service("b", ["OXF", "CBG"])], command)
+    assert f"{command} prices each candidate as the only new train" in caplog.text
+    assert "can't be added up" in caplog.text
+    assert "with `scenario`" not in caplog.text
+
+
+def test_scenario_warns_before_pricing_overlapping_candidates(monkeypatch, tmp_path):
+    services = [object(), object()]
+    warned = []
+    monkeypatch.setattr(scenario, "warn_shared_pairs", lambda *args: warned.append(args))
+
+    def stop(_path):
+        raise LookupError
+
+    monkeypatch.setattr(scenario, "TagDataBook", stop)
+    config = types.SimpleNamespace(output_path=tmp_path, services=services, tag_databook_path="")
+    with pytest.raises(LookupError):
+        scenario.run_scenario_command(config)
+    assert warned == [(services, "scenario")]
+
+
+def test_calibrated_demand_will_not_fall_back_to_the_legacy_pivot(tmp_path):
+    from ortla.demand import build_gravity_context, predict_demand
+
+    paths = {
+        "services": [],
+        "output_path": tmp_path,
+        "timetable_calls_path": tmp_path / "calls.csv",
+        "bplan_output_path": tmp_path,
+        "period_matrices_dir": tmp_path / "xx_period_matrices",
+    }
+    config = ProposeConfig(**paths)
+    with pytest.raises(ValueError, match="no gravity model"):
+        build_gravity_context(config)
+    with pytest.raises(ValueError, match="no gravity model"):
+        predict_demand(config, None, pd.DataFrame(), None)
+    assert build_gravity_context(ProposeConfig(**paths, demand_model="legacy")) is None
+    with pytest.raises(ValueError, match="demand_model"):
+        ProposeConfig(**paths, demand_model="calibrate")
+
+
+def test_a_journey_type_without_factors_can_keep_its_journeys():
+    from ortla.period_matrices import pool_missing_types
+
+    factors = pd.DataFrame(
+        {
+            "journey_type": ["commute", "commute", "O:BTN"],
+            "Service Week Day": ["Monday", "Tuesday", "Monday"],
+            "time_period": ["am_peak", "am_peak", "am_peak"],
+            "boardings": [30.0, 10.0, 99.0],
+            "factor": [0.75, 0.25, 1.0],
+        }
+    )
+    types_ = pd.Series(["commute", "long_distance", "Unknown"])
+    out = pool_missing_types(factors, types_)
+    assert out[out.journey_type == "long_distance"].factor.tolist() == [0.75, 0.25]
+    assert "Unknown" not in set(out.journey_type)
