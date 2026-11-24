@@ -419,6 +419,14 @@ def _column_calls(
     return [calls[key] for key in sorted(calls, key=lambda k: calls[k]["row"])]
 
 
+def _absorb(target: dict, call: dict) -> None:
+    """Fold a second entry for the same call into the first."""
+    for field in ("arr", "dep", "pass"):
+        target[field] = target.get(field) or call.get(field)
+    target["stops"] = target.get("stops", False) or call.get("stops", False)
+    target["crs_code"] = target.get("crs_code") or call.get("crs_code")
+
+
 def _merge_calls(calls: list[dict]) -> list[dict]:
     """Combine the entries two overlapping books make of one call.
 
@@ -426,37 +434,38 @@ def _merge_calls(calls: list[dict]) -> list[dict]:
     printed in both books, typically as the arrival that closes one
     section and the departure that opens the next. Left alone these
     count as two calls, which inflates the busiest interchanges. Entries
-    at the same location within half an hour of each other, with no call
-    elsewhere between them, are the same call. A train can come back
-    sooner (one reversing at Eastbourne calls at Hampden Park either side
-    of it within minutes), but only after being somewhere else.
+    at the same location within half an hour of each other, counted round
+    midnight, with no stop at another station between them, are the same
+    call. A train can come back sooner (one reversing at Eastbourne calls
+    at Hampden Park either side of it within minutes), but only after
+    stopping somewhere else; a junction passed in between doesn't count.
     """
     by_location: dict[str, list[dict]] = collections.defaultdict(list)
     for call in calls:
         by_location[call["tiploc_code"]].append(call)
-    minutes = sorted((_call_minutes(call), call["tiploc_code"]) for call in calls)
+    # Only a stop at another station separates two entries; a junction
+    # passed between a boundary station's arrival and departure doesn't.
+    stops = [(_call_minutes(c), c["tiploc_code"]) for c in calls if c.get("crs_code") and not c.get("pass")]
 
-    def elsewhere_between(location: str, start: int, end: int) -> bool:
-        return any(start < m < end and loc != location for m, loc in minutes)
+    def gap(start: int, end: int) -> int:
+        return (end - start) % MINUTES_PER_DAY
+
+    def same_call(location: str, start: int, end: int) -> bool:
+        return gap(start, end) <= _SAME_CALL_GAP and not any(
+            0 < gap(start, m) < gap(start, end) and loc != location for m, loc in stops
+        )
 
     merged = []
     for location_calls in by_location.values():
         groups: list[dict] = []
         for call in sorted(location_calls, key=_call_minutes):
-            minute = _call_minutes(call)
-            last = _call_minutes(groups[-1]) if groups else None
-            if (
-                groups
-                and minute - last <= _SAME_CALL_GAP
-                and not elsewhere_between(call["tiploc_code"], last, minute)
-            ):
-                target = groups[-1]
-                for field in ("arr", "dep", "pass"):
-                    target[field] = target.get(field) or call.get(field)
-                target["stops"] = target.get("stops", False) or call.get("stops", False)
-                target["crs_code"] = target.get("crs_code") or call.get("crs_code")
+            if groups and same_call(call["tiploc_code"], _call_minutes(groups[-1]), _call_minutes(call)):
+                _absorb(groups[-1], call)
             else:
                 groups.append(dict(call))
+        # an arrival before midnight and a departure after it
+        if len(groups) > 1 and same_call(groups[0]["tiploc_code"], _call_minutes(groups[-1]), _call_minutes(groups[0])):
+            _absorb(groups[-1], groups.pop(0))
         merged.extend(groups)
     return merged
 
@@ -477,7 +486,7 @@ def _minutes(time: str) -> int:
     return int(time[:2]) * 60 + int(time[2:])
 
 
-def _order_calls(calls: list[dict], origin: str | None) -> list[dict]:
+def _order_calls(calls: list[dict], origin: str | None, origin_time: str | None = None) -> list[dict]:
     """Return the merged calls in running order, past midnight.
 
     Books are concatenated in no particular order, so a train's calls
@@ -486,9 +495,9 @@ def _order_calls(calls: list[dict], origin: str | None) -> list[dict]:
     Inverness sleeper leaves at 2030 and calls at 0500, and a clock sort
     puts the arrival first, which then reads as the train's origin.
 
-    So the sequence is anchored on the origin the book itself states:
-    anything timed earlier than the departure from there belongs to the
-    following day. Without a usable origin (the books' sections may not
+    So the sequence is anchored on the departure time the header states
+    for the origin (or, without one, the earliest call at the origin it
+    names): anything timed earlier belongs to the following day. Without a usable origin (the books' sections may not
     reach it) the anchor is the call after the longest gap on the clock:
     a train runs well under a day, so the overnight gap between its last
     call and its next day's first is the longest.
@@ -500,7 +509,12 @@ def _order_calls(calls: list[dict], origin: str | None) -> list[dict]:
     if not timed:
         return []
     start = None
-    if origin is not None:
+    if origin_time is not None:
+        # the header's departure time: a train that returns to its origin
+        # (a loop out of Waterloo) is there again later on the clock or,
+        # past midnight, earlier
+        start = _minutes(origin_time)
+    elif origin is not None:
         starts = [_call_minutes(c) for c in timed if c["tiploc_code"] == origin]
         if starts:
             start = min(starts)
@@ -543,6 +557,27 @@ def _schedule_location(call: dict, position: str, passenger: bool) -> dict:
     }
 
 
+def _header_ends(header: dict, calls: list[dict], names: dict) -> list[dict]:
+    """The origin and destination a header names but no printed row carries.
+
+    Some lines are in no book (the Northumberland Line), so a train from
+    Ashington is printed only from Heaton, yet its header still reads
+    "ASHINGTON\n14:07". Where that end is a station the train's rows don't
+    reach, it becomes the train's first or last call, at the header's time.
+    """
+    tiplocs = {call["tiploc_code"] for call in calls}
+    stations = {call.get("crs_code") for call in calls}
+    ends = []
+    for field, time_field in (("origin", "dep"), ("destination", "arr")):
+        name, _, time = header.get(field, "").partition("\n")
+        end = _resolve(name, names) if name.strip() else None
+        clock = re.fullmatch(r"(\d{2}):(\d{2})", time.strip())
+        if end and end[1] and clock and end[0] not in tiplocs and end[1] not in stations:
+            ends.append({"tiploc_code": end[0], "crs_code": end[1], "row": -1,
+                         time_field: clock[1] + clock[2], "stops": True})
+    return ends
+
+
 def _to_schedule(
     uid: str,
     header: dict,
@@ -553,14 +588,17 @@ def _to_schedule(
     """One ``JsonScheduleV1``-shaped record, or ``None``."""
     # The books print the origin as its name, a line break and the time.
     origin = _resolve(header.get("origin", "").split("\n")[0], names or {})
-    ordered = _order_calls(calls, origin[0] if origin else None)
+    headcode = header.get("headcode", "")
+    passenger = _is_passenger(headcode)
+    if passenger:
+        calls = calls + _header_ends(header, calls, names or {})
+    clock = re.fullmatch(r"(\d{2}):(\d{2})", header.get("origin", "").partition("\n")[2].strip())
+    ordered = _order_calls(calls, origin[0] if origin else None, clock[1] + clock[2] if clock else None)
     if len(ordered) < _MINIMUM_CALLS:
         return None
     dates = _dates(header.get("dates", ""))
     if dates is None:
         return None
-    headcode = header.get("headcode", "")
-    passenger = _is_passenger(headcode)
     locations = []
     for index, call in enumerate(ordered):
         if index == 0:
@@ -591,6 +629,35 @@ def _to_schedule(
             "schedule_location": locations,
         },
     }
+
+
+def _date_groups(parts: list[dict]) -> list[list[dict]]:
+    """Split one UID's book entries into schedules by date range.
+
+    Books disagree slightly about a train's dates, so overlapping ranges
+    are one schedule. Ranges that don't overlap are versions of the train
+    for different parts of the timetable (Portsmouth Harbour at 04:30 to
+    18 September, 04:26 from 21 September), and merging them would mix
+    their times. An entry with no dates goes with the first group.
+    """
+    dated = sorted(
+        ((d, p) for p in parts if (d := _dates(p["header"].get("dates", ""))) is not None),
+        key=lambda pair: pair[0],
+    )
+    groups: list[list[dict]] = []
+    end = ""
+    for (start, finish), part in dated:
+        if groups and start <= end:
+            groups[-1].append(part)
+            end = max(end, finish)
+        else:
+            groups.append([part])
+            end = finish
+    undated = [p for p in parts if _dates(p["header"].get("dates", "")) is None]
+    if not groups:
+        return [undated] if undated else []
+    groups[0].extend(undated)
+    return groups
 
 
 def _widest_header(current: dict, candidate: dict) -> dict:
@@ -653,9 +720,7 @@ def iter_schedule_records(
     """
     books = _books(path)
     LOG.info("Reading %d Working Timetable books from %s", len(books), path)
-    merged: dict[tuple, dict] = collections.defaultdict(
-        lambda: {"header": {}, "calls": [], "masks": collections.Counter()}
-    )
+    partials: dict[tuple, list[dict]] = collections.defaultdict(list)
     for index, book in enumerate(books, start=1):
         if index % 100 == 0:
             LOG.info("  %d/%d books", index, len(books))
@@ -665,17 +730,20 @@ def iter_schedule_records(
             LOG.warning("Skipping %s: %s", book.name, error)
             continue
         for uid, partial in columns:
-            entry = merged[_schedule_key(uid, partial["header"])]
-            entry["header"] = _widest_header(entry["header"], partial["header"])
-            entry["masks"][_days_mask(partial["header"].get("days", ""))] += 1
-            entry["calls"].extend(partial["calls"])
+            partials[_schedule_key(uid, partial["header"])].append(partial)
 
+    merged = [(uid, group) for (uid, _), parts in partials.items() for group in _date_groups(parts)]
     LOG.info("Merged %d distinct schedules", len(merged))
-    for (uid, _), entry in merged.items():
+    for uid, parts in merged:
+        header: dict = {}
+        masks: collections.Counter = collections.Counter()
+        for partial in parts:
+            header = _widest_header(header, partial["header"])
+            masks[_days_mask(partial["header"].get("days", ""))] += 1
         schedule = _to_schedule(
             uid,
-            entry["header"] | {"days_mask": entry["masks"].most_common(1)[0][0]},
-            _merge_calls(entry["calls"]),
+            header | {"days_mask": masks.most_common(1)[0][0]},
+            _merge_calls([call for partial in parts for call in partial["calls"]]),
             operators or {},
             names,
         )
